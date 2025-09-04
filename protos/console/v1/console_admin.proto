@@ -1,0 +1,223 @@
+// Console Admin API v1
+// Defines administrative operations for the Auth Console
+
+syntax = "proto3";
+
+package console.v1;
+
+option go_package = "auth_service/generated/console/v1;consolev1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// Console Admin Service provides administrative operations
+service ConsoleAdminService {
+  // User Management
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc LockUser(LockUserRequest) returns (LockUserResponse);
+  rpc UnlockUser(UnlockUserRequest) returns (UnlockUserResponse);
+  rpc UpdateUserRole(UpdateUserRoleRequest) returns (UpdateUserRoleResponse);
+  
+  // Audit Logs
+  rpc ListAuditLogs(ListAuditLogsRequest) returns (ListAuditLogsResponse);
+  
+  // Verification Code Statistics
+  rpc GetCodeStats(GetCodeStatsRequest) returns (GetCodeStatsResponse);
+  
+  // System Settings
+  rpc GetSettings(google.protobuf.Empty) returns (GetSettingsResponse);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (UpdateSettingsResponse);
+  
+  // Revoke Tokens
+  rpc RevokeUserTokens(RevokeUserTokensRequest) returns (RevokeUserTokensResponse);
+}
+
+// User Management Messages
+message ListUsersRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string search = 3;  // search by email, phone, or user_id
+  UserStatus status = 4;
+  string role = 5;
+}
+
+message ListUsersResponse {
+  repeated UserInfo users = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  UserInfo user = 1;
+}
+
+message LockUserRequest {
+  string user_id = 1;
+  string reason = 2;
+}
+
+message LockUserResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message UnlockUserRequest {
+  string user_id = 1;
+  string reason = 2;
+}
+
+message UnlockUserResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message UpdateUserRoleRequest {
+  string user_id = 1;
+  string role = 2;
+}
+
+message UpdateUserRoleResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Audit Log Messages
+message ListAuditLogsRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string user_id = 3;
+  string action = 4;
+  google.protobuf.Timestamp start_time = 5;
+  google.protobuf.Timestamp end_time = 6;
+}
+
+message ListAuditLogsResponse {
+  repeated AuditLog logs = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+// Code Statistics Messages
+message GetCodeStatsRequest {
+  google.protobuf.Timestamp start_time = 1;
+  google.protobuf.Timestamp end_time = 2;
+  string group_by = 3; // hour, day, week
+}
+
+message GetCodeStatsResponse {
+  repeated CodeStatEntry stats = 1;
+  int32 total_sent = 2;
+  int32 total_verified = 3;
+  double success_rate = 4;
+}
+
+// Settings Messages
+message GetSettingsResponse {
+  Settings settings = 1;
+}
+
+message UpdateSettingsRequest {
+  Settings settings = 1;
+}
+
+message UpdateSettingsResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Token Revocation Messages
+message RevokeUserTokensRequest {
+  string user_id = 1;
+  string reason = 2;
+}
+
+message RevokeUserTokensResponse {
+  bool success = 1;
+  int32 revoked_count = 2;
+  string message = 3;
+}
+
+// Data Models
+message UserInfo {
+  string id = 1;
+  string email = 2;
+  string phone_number = 3;
+  string role = 4;
+  UserStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp last_login = 7;
+  bool email_verified = 8;
+  bool phone_verified = 9;
+  google.protobuf.Timestamp locked_until = 10;
+  string lock_reason = 11;
+}
+
+message AuditLog {
+  string id = 1;
+  string user_id = 2;
+  string admin_id = 3;
+  string action = 4;
+  string target_id = 5;
+  string details = 6;
+  string ip_address = 7;
+  string user_agent = 8;
+  google.protobuf.Timestamp created_at = 9;
+}
+
+message CodeStatEntry {
+  google.protobuf.Timestamp timestamp = 1;
+  int32 sent_count = 2;
+  int32 verified_count = 3;
+  string type = 4; // sms, email
+}
+
+message Settings {
+  JWTSettings jwt = 1;
+  SMTPSettings smtp = 2;
+  SMSSettings sms = 3;
+  SecuritySettings security = 4;
+}
+
+message JWTSettings {
+  int32 access_token_ttl_minutes = 1;
+  int32 refresh_token_ttl_days = 2;
+}
+
+message SMTPSettings {
+  string host = 1;
+  int32 port = 2;
+  string username = 3;
+  string password = 4; // encrypted
+  bool use_tls = 5;
+  string from_address = 6;
+}
+
+message SMSSettings {
+  string provider = 1;
+  string account_sid = 2;
+  string auth_token = 3; // encrypted
+  string from_number = 4;
+}
+
+message SecuritySettings {
+  int32 max_login_attempts = 1;
+  int32 lockout_duration_minutes = 2;
+  int32 code_expiry_minutes = 3;
+  int32 max_codes_per_hour = 4;
+}
+
+// Enums
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_INACTIVE = 2;
+  USER_STATUS_LOCKED = 3;
+  USER_STATUS_PENDING = 4;
+} 
