@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"auth_service/models"
+	"github.com/all2prosperity/auth_service/models"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"

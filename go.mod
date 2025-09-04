@@ -1,11 +1,10 @@
-module auth_service
+module github.com/all2prosperity/auth_service
 
 go 1.23.5
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.6-20250613105001-9f2d3c737feb.1
 	connectrpc.com/connect v1.18.1
-	connectrpc.com/grpcreflect v1.3.0
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-chi/cors v1.2.1
 	github.com/go-redis/redis/v8 v8.11.5
@@ -29,6 +28,7 @@ require (
 )
 
 require (
+	connectrpc.com/grpcreflect v1.3.0 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

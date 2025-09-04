@@ -2,11 +2,12 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
-	"auth_service/config"
-	"auth_service/models"
+	"github.com/all2prosperity/auth_service/config"
+	"github.com/all2prosperity/auth_service/models"
 
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
@@ -17,6 +18,35 @@ import (
 // DB wraps the GORM database connection
 type DB struct {
 	*gorm.DB
+}
+
+// NewDatabaseFromSQL creates a new GORM database connection from an existing sql.DB
+func NewDatabaseFromSQL(sqlDB *sql.DB, zapLogger *zap.SugaredLogger) (*DB, error) {
+	gormConfig := &gorm.Config{
+		Logger: logger.New(
+			zap.NewStdLog(zapLogger.Desugar()),
+			logger.Config{
+				SlowThreshold:             time.Second,
+				LogLevel:                  logger.Info,
+				IgnoreRecordNotFoundError: true,
+				Colorful:                  true,
+			},
+		),
+	}
+
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		Conn: sqlDB,
+	}), gormConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database with existing connection: %w", err)
+	}
+
+	return &DB{db}, nil
+}
+
+// NewDatabaseFromGORM creates a new DB wrapper from an existing GORM instance
+func NewDatabaseFromGORM(gormDB *gorm.DB) *DB {
+	return &DB{gormDB}
 }
 
 // NewDatabase creates a new GORM database connection

@@ -85,7 +85,7 @@ internal/console/
 
 ```go
 // main.go
-import "auth_service/internal/console"
+import "github.com/all2prosperity/auth_service/internal/console"
 
 // 初始化console模块
 consoleConfig := console.Config{

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"auth_service/internal/console/audit"
-	"auth_service/internal/console/metrics"
-	"auth_service/internal/console/rbac"
-	"auth_service/internal/console/store"
+	"github.com/all2prosperity/auth_service/internal/console/audit"
+	"github.com/all2prosperity/auth_service/internal/console/metrics"
+	"github.com/all2prosperity/auth_service/internal/console/rbac"
+	"github.com/all2prosperity/auth_service/internal/console/store"
 
 	"golang.org/x/time/rate"
 )

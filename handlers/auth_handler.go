@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"auth_service/dao"
-	"auth_service/database"
-	authv1 "auth_service/generated/auth/v1"
-	"auth_service/models"
-	"auth_service/services"
+	"github.com/all2prosperity/auth_service/dao"
+	"github.com/all2prosperity/auth_service/database"
+	authv1 "github.com/all2prosperity/auth_service/generated/auth/v1"
+	"github.com/all2prosperity/auth_service/models"
+	"github.com/all2prosperity/auth_service/services"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/emptypb"

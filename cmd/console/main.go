@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"auth_service/config"
-	"auth_service/database"
-	"auth_service/internal/console"
+	"github.com/all2prosperity/auth_service/config"
+	"github.com/all2prosperity/auth_service/database"
+	"github.com/all2prosperity/auth_service/internal/console"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"

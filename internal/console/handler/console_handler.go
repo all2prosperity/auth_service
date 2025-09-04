@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"auth_service/internal/console/rbac"
-	"auth_service/internal/console/service"
+	"github.com/all2prosperity/auth_service/internal/console/rbac"
+	"github.com/all2prosperity/auth_service/internal/console/service"
 
 	"github.com/golang-jwt/jwt/v5"
 )

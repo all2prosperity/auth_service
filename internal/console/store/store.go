@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"auth_service/internal/console/audit"
-	"auth_service/models"
+	"github.com/all2prosperity/auth_service/internal/console/audit"
+	"github.com/all2prosperity/auth_service/models"
 )
 
 // Store defines the interface for console data operations

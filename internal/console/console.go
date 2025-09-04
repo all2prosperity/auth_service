@@ -5,11 +5,11 @@ import (
 	"log"
 	"net/http"
 
-	"auth_service/internal/console/handler"
-	"auth_service/internal/console/metrics"
-	"auth_service/internal/console/rbac"
-	"auth_service/internal/console/service"
-	"auth_service/internal/console/store"
+	"github.com/all2prosperity/auth_service/internal/console/handler"
+	"github.com/all2prosperity/auth_service/internal/console/metrics"
+	"github.com/all2prosperity/auth_service/internal/console/rbac"
+	"github.com/all2prosperity/auth_service/internal/console/service"
+	"github.com/all2prosperity/auth_service/internal/console/store"
 
 	"gorm.io/gorm"
 )

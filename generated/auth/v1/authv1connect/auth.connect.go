@@ -5,13 +5,14 @@
 package authv1connect
 
 import (
-	v1 "auth_service/generated/auth/v1"
-	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	http "net/http"
 	strings "strings"
+
+	connect "connectrpc.com/connect"
+	v1 "github.com/all2prosperity/auth_service/generated/auth/v1"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file and the connect package are

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"auth_service/config"
-	"auth_service/dao"
-	"auth_service/database"
-	"auth_service/models"
-	"auth_service/services"
+	"github.com/all2prosperity/auth_service/config"
+	"github.com/all2prosperity/auth_service/dao"
+	"github.com/all2prosperity/auth_service/database"
+	"github.com/all2prosperity/auth_service/models"
+	"github.com/all2prosperity/auth_service/services"
 
 	"go.uber.org/zap"
 )

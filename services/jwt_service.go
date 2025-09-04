@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"auth_service/config"
-	"auth_service/database"
-	"auth_service/models"
+	"github.com/all2prosperity/auth_service/config"
+	"github.com/all2prosperity/auth_service/database"
+	"github.com/all2prosperity/auth_service/models"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/oklog/ulid/v2"

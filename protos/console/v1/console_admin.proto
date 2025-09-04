@@ -5,7 +5,7 @@ syntax = "proto3";
 
 package console.v1;
 
-option go_package = "auth_service/generated/console/v1;consolev1";
+option go_package = "github.com/all2prosperity/auth_service/generated/console/v1;consolev1";
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";

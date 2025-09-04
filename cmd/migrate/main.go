@@ -6,9 +6,9 @@ import (
 	"log"
 	"os"
 
-	"auth_service/config"
-	"auth_service/database"
-	"auth_service/migrations"
+	"github.com/all2prosperity/auth_service/config"
+	"github.com/all2prosperity/auth_service/database"
+	"github.com/all2prosperity/auth_service/migrations"
 
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"auth_service/internal/console/audit"
-	"auth_service/models"
+	"github.com/all2prosperity/auth_service/internal/console/audit"
+	"github.com/all2prosperity/auth_service/models"
 
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"

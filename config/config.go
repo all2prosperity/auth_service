@@ -197,7 +197,7 @@ func setDefaults(k *koanf.Koanf) {
 		"database.port":              5432,
 		"database.user":              "postgres",
 		"database.password":          "",
-		"database.db_name":           "auth_service",
+		"database.db_name":           "github.com/all2prosperity/auth_service",
 		"database.ssl_mode":          "disable",
 		"database.max_open_conns":    25,
 		"database.max_idle_conns":    5,

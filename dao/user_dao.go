@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"auth_service/database"
-	"auth_service/models"
+	"github.com/all2prosperity/auth_service/database"
+	"github.com/all2prosperity/auth_service/models"
 
 	"github.com/oklog/ulid/v2"
 	"gorm.io/gorm"
