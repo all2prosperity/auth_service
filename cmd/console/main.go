@@ -14,13 +14,13 @@ import (
 	"github.com/all2prosperity/auth_service/config"
 	"github.com/all2prosperity/auth_service/database"
 	"github.com/all2prosperity/auth_service/internal/console"
+	"github.com/all2prosperity/auth_service/internal/logger"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -36,29 +36,39 @@ func main() {
 		log.Printf("Warning: .env file not found: %v", err)
 	}
 
-	// Setup logger
-	logger := zap.L().Sugar()
-	logger.Info("Starting Console Service in standalone mode...")
-
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		logger.Error("Failed to load configuration", zap.Error(err))
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Initialize database
-	db, err := database.NewDatabase(&cfg.Database, logger)
+	// Initialize logger manager
+	loggerConfig := cfg.Logging.ToLoggerConfig()
+	loggerManager, err := logger.NewManager(loggerConfig)
 	if err != nil {
-		logger.Error("Failed to connect to database", zap.Error(err))
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer loggerManager.Close()
+
+	// Get unified logger
+	appLogger := loggerManager.GetUnifiedLogger()
+	appLogger.Info("Starting Console Service in standalone mode...")
+
+	// Initialize database
+	db, err := database.NewDatabase(&cfg.Database, loggerManager.GetZapSugarLogger())
+	if err != nil {
+		appLogger.Error("Failed to connect to database", logger.Err("error", err))
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	// Run migrations
 	if err := db.AutoMigrate(); err != nil {
-		logger.Error("Failed to run migrations", zap.Error(err))
+		appLogger.Error("Failed to run migrations", logger.Err("error", err))
+		os.Exit(1)
 	}
 
-	logger.Info("Database connected and migrations completed")
+	appLogger.Info("Database connected and migrations completed")
 
 	// Initialize console module
 	consoleConfig := console.Config{
@@ -68,7 +78,8 @@ func main() {
 
 	consoleModule, err := console.NewConsole(db.DB, consoleConfig)
 	if err != nil {
-		logger.Error("Failed to initialize console module", zap.Error(err))
+		appLogger.Error("Failed to initialize console module", logger.Err("error", err))
+		os.Exit(1)
 	}
 
 	// Setup HTTP server
@@ -126,9 +137,9 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		logger.Infof("Console service starting on port %d", *port)
+		appLogger.Info("Console service starting on port", logger.Int("port", *port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("Server failed to start", zap.Error(err))
+			appLogger.Error("Server failed to start", logger.Err("error", err))
 		}
 	}()
 
@@ -137,7 +148,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down console service...")
+	appLogger.Info("Shutting down console service...")
 
 	// Create a deadline to wait for
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -145,8 +156,8 @@ func main() {
 
 	// Attempt graceful shutdown
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("Console service forced to shutdown", zap.Error(err))
+		appLogger.Error("Console service forced to shutdown", logger.Err("error", err))
 	}
 
-	logger.Info("Console service exited")
+	appLogger.Info("Console service exited")
 }

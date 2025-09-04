@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -13,13 +14,13 @@ import (
 	"github.com/all2prosperity/auth_service/generated/auth/v1/authv1connect"
 	"github.com/all2prosperity/auth_service/handlers"
 	"github.com/all2prosperity/auth_service/internal/console"
+	"github.com/all2prosperity/auth_service/internal/logger"
 	"github.com/all2prosperity/auth_service/services"
 
 	"connectrpc.com/connect"
 	"connectrpc.com/grpcreflect"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-redis/redis/v8"
-	"github.com/rs/zerolog"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -30,8 +31,7 @@ type AuthModule struct {
 	db            *database.DB
 	authHandler   *handlers.AuthHandler
 	consoleModule *console.Console
-	logger        *log.Logger
-	zapLogger     *zap.Logger
+	loggerManager *logger.Manager
 	redisClient   *redis.Client
 	ownRedis      bool // whether we created the redis client
 }
@@ -46,10 +46,11 @@ type AuthModuleConfig struct {
 	Redis *redis.Client
 	// Config (optional, will load from default if not provided)
 	Config *config.Config
-	// Logger (optional, will create default if not provided)
-	Logger        *log.Logger
-	ZapLogger     *zap.Logger
-	ZerologLogger *zerolog.Logger
+	// Logger manager (optional, will create default if not provided)
+	LoggerManager *logger.Manager
+	// Legacy logger support (deprecated, use LoggerManager instead)
+	Logger    *log.Logger
+	ZapLogger *zap.Logger
 	// Console enabled (default: true)
 	ConsoleEnabled bool
 }
@@ -59,20 +60,7 @@ func NewAuthModule(cfg AuthModuleConfig) (*AuthModule, error) {
 	var err error
 	module := &AuthModule{}
 
-	// Initialize logger
-	if cfg.Logger != nil {
-		module.logger = cfg.Logger
-	} else {
-		module.logger = log.Default()
-	}
-
-	if cfg.ZapLogger != nil {
-		module.zapLogger = cfg.ZapLogger
-	} else {
-		module.zapLogger = zap.L()
-	}
-
-	// Load configuration
+	// Load configuration first
 	if cfg.Config != nil {
 		module.config = cfg.Config
 	} else {
@@ -82,19 +70,44 @@ func NewAuthModule(cfg AuthModuleConfig) (*AuthModule, error) {
 		}
 	}
 
+	// Initialize logger manager
+	if cfg.LoggerManager != nil {
+		module.loggerManager = cfg.LoggerManager
+	} else {
+		// Create logger manager from config
+		loggerConfig := module.config.Logging.ToLoggerConfig()
+		module.loggerManager, err = logger.NewManager(loggerConfig)
+		if err != nil {
+			// Fallback to default logger if config parsing fails
+			defaultConfig := logger.Config{
+				Level:  logger.InfoLevel,
+				Format: logger.JSONFormat,
+				Output: "stdout",
+			}
+			module.loggerManager, err = logger.NewManager(defaultConfig)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Get unified logger for module usage
+	moduleLogger := module.loggerManager.GetUnifiedLogger()
+	moduleLogger.Info("Initializing AuthModule")
+
 	// Initialize database
 	if cfg.DB != nil {
 		// Use provided GORM DB
 		module.db = database.NewDatabaseFromGORM(cfg.DB)
 	} else if cfg.SQLDB != nil {
 		// Use provided SQL DB - need to wrap it
-		module.db, err = database.NewDatabaseFromSQL(cfg.SQLDB, module.zapLogger.Sugar())
+		module.db, err = database.NewDatabaseFromSQL(cfg.SQLDB, module.loggerManager.GetZapSugarLogger())
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		// Create new database connection
-		module.db, err = database.NewDatabase(&module.config.Database, module.zapLogger.Sugar())
+		module.db, err = database.NewDatabase(&module.config.Database, module.loggerManager.GetZapSugarLogger())
 		if err != nil {
 			return nil, err
 		}
@@ -104,6 +117,7 @@ func NewAuthModule(cfg AuthModuleConfig) (*AuthModule, error) {
 	if err := module.db.AutoMigrate(); err != nil {
 		return nil, err
 	}
+	moduleLogger.Info("Database initialized and migrations completed")
 
 	// Initialize Redis
 	if cfg.Redis != nil {
@@ -118,7 +132,9 @@ func NewAuthModule(cfg AuthModuleConfig) (*AuthModule, error) {
 		module.ownRedis = true
 		// Test connection
 		if err := module.redisClient.Ping(context.Background()).Err(); err != nil {
-			module.logger.Printf("Warning: Failed to connect to Redis: %v", err)
+			moduleLogger.Warn("Failed to connect to Redis", logger.Err("error", err))
+		} else {
+			moduleLogger.Info("Redis connection established")
 		}
 	}
 
@@ -127,6 +143,7 @@ func NewAuthModule(cfg AuthModuleConfig) (*AuthModule, error) {
 	if err != nil {
 		return nil, err
 	}
+	moduleLogger.Info("Services initialized successfully")
 
 	// Initialize console if enabled
 	if cfg.ConsoleEnabled {
@@ -136,11 +153,14 @@ func NewAuthModule(cfg AuthModuleConfig) (*AuthModule, error) {
 		}
 		module.consoleModule, err = console.NewConsole(module.db.DB, consoleConfig)
 		if err != nil {
-			module.logger.Printf("Warning: Failed to initialize console module: %v", err)
+			moduleLogger.Warn("Failed to initialize console module", logger.Err("error", err))
 			module.consoleModule = nil
+		} else {
+			moduleLogger.Info("Console module initialized successfully")
 		}
 	}
 
+	moduleLogger.Info("AuthModule initialization completed successfully")
 	return module, nil
 }
 
@@ -153,10 +173,10 @@ func (m *AuthModule) initializeServices() error {
 	passwordService := services.NewPasswordService()
 	jwtService := services.NewJWTService(&m.config.JWT, m.db)
 
-	// Create zerolog logger for code service
-	zLogger := getZerologLogger(m.logger)
-	codeService := services.NewCodeService(m.db, &m.config.SMTP, &m.config.SMS, zLogger)
-	regCodeService := services.NewRegistrationCodeService(m.redisClient, zLogger)
+	// Use zerolog logger for services that require it
+	zerologLogger := m.loggerManager.GetZerologLogger()
+	codeService := services.NewCodeService(m.db, &m.config.SMTP, &m.config.SMS, zerologLogger)
+	regCodeService := services.NewRegistrationCodeService(m.redisClient, zerologLogger)
 
 	// Initialize auth handler
 	m.authHandler = handlers.NewAuthHandler(
@@ -166,7 +186,7 @@ func (m *AuthModule) initializeServices() error {
 		jwtService,
 		codeService,
 		regCodeService,
-		m.logger,
+		m.loggerManager.GetStdLogger(),
 	)
 
 	return nil
@@ -183,13 +203,13 @@ func (m *AuthModule) RegisterRoutes(router chi.Router) {
 					resp, err := next(ctx, req)
 					duration := time.Since(start)
 					if err != nil {
-						m.zapLogger.Error("ConnectRPC call failed",
+						m.loggerManager.GetZapLogger().Error("ConnectRPC call failed",
 							zap.String("procedure", req.Spec().Procedure),
 							zap.Duration("duration", duration),
 							zap.Error(err),
 						)
 					} else {
-						m.zapLogger.Info("ConnectRPC call completed",
+						m.loggerManager.GetZapLogger().Info("ConnectRPC call completed",
 							zap.String("procedure", req.Spec().Procedure),
 							zap.Duration("duration", duration),
 						)
@@ -231,16 +251,32 @@ func (m *AuthModule) Health() error {
 
 // Close closes the auth module and releases resources
 func (m *AuthModule) Close() error {
+	var errors []error
+
 	// Close redis connection if we created it
 	if m.ownRedis && m.redisClient != nil {
 		if err := m.redisClient.Close(); err != nil {
-			m.logger.Printf("Error closing Redis connection: %v", err)
+			m.loggerManager.GetUnifiedLogger().Error("Error closing Redis connection", logger.Err("error", err))
+			errors = append(errors, err)
 		}
 	}
 
 	// Close database connection
 	if m.db != nil {
-		return m.db.Close()
+		if err := m.db.Close(); err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	// Close logger manager
+	if m.loggerManager != nil {
+		if err := m.loggerManager.Close(); err != nil {
+			errors = append(errors, err)
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("errors closing auth module: %v", errors)
 	}
 	return nil
 }
@@ -266,23 +302,38 @@ func (m *AuthModule) StartCleanupRoutine() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 
+		moduleLogger := m.loggerManager.GetUnifiedLogger()
+		moduleLogger.Info("Starting cleanup routine")
+
 		for {
 			select {
 			case <-ticker.C:
 				if err := m.db.CleanupExpiredTokens(); err != nil {
-					m.zapLogger.Error("Failed to cleanup expired tokens", zap.Error(err))
-				}
-
-				// Get JWT service for blacklist cleanup
-				if m.authHandler != nil {
-					// Note: This would require exposing JWT service or adding cleanup method to handler
-					m.logger.Println("Cleanup cycle completed")
+					moduleLogger.Error("Failed to cleanup expired tokens", logger.Err("error", err))
+				} else {
+					moduleLogger.Debug("Cleanup cycle completed successfully")
 				}
 			}
 		}
 	}()
 }
 
-func getZerologLogger(logger *log.Logger) zerolog.Logger {
-	return zerolog.New(logger.Writer()).Level(zerolog.InfoLevel).With().Timestamp().Logger()
+// GetLoggerManager returns the logger manager (for advanced usage)
+func (m *AuthModule) GetLoggerManager() *logger.Manager {
+	return m.loggerManager
+}
+
+// GetLogger returns a unified logger interface
+func (m *AuthModule) GetLogger() logger.Logger {
+	return m.loggerManager.GetUnifiedLogger()
+}
+
+// GetZapLogger returns the Zap logger (for legacy compatibility)
+func (m *AuthModule) GetZapLogger() *zap.Logger {
+	return m.loggerManager.GetZapLogger()
+}
+
+// GetStdLogger returns the standard logger (for legacy compatibility)
+func (m *AuthModule) GetStdLogger() *log.Logger {
+	return m.loggerManager.GetStdLogger()
 }

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/all2prosperity/auth_service/internal/logger"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
@@ -114,6 +115,15 @@ type LoggingConfig struct {
 	Level  string `koanf:"level"`
 	Format string `koanf:"format"`
 	Output string `koanf:"output"`
+}
+
+// ToLoggerConfig converts LoggingConfig to logger.Config
+func (c *LoggingConfig) ToLoggerConfig() logger.Config {
+	return logger.Config{
+		Level:  logger.ParseLevel(c.Level),
+		Format: logger.ParseFormat(c.Format),
+		Output: c.Output,
+	}
 }
 
 type FeatureConfig struct {

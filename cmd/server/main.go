@@ -10,51 +10,58 @@ import (
 	"syscall"
 	"time"
 
-	auth "github.com/all2prosperity/auth_service"
+	auth "github.com/all2prosperity/auth_service/auth"
 	"github.com/all2prosperity/auth_service/config"
+	"github.com/all2prosperity/auth_service/internal/logger"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
 
 func main() {
-	// Setup logger first
-	logger := zap.L()
-
-	// Load configuration
+	// Load configuration first
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		logger.Error("Failed to load configuration", zap.Error(err))
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
-		logger.Error("Invalid configuration", zap.Error(err))
+		log.Fatalf("Invalid configuration: %v", err)
 	}
+
+	// Initialize logger manager
+	loggerConfig := cfg.Logging.ToLoggerConfig()
+	loggerManager, err := logger.NewManager(loggerConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer loggerManager.Close()
+
+	// Get unified logger
+	appLogger := loggerManager.GetUnifiedLogger()
 
 	// Print configuration for debugging
 	cfg.Print()
-	logger.Info("Starting Auth Service...")
+	appLogger.Info("Starting Auth Service...")
 
 	// Initialize auth module
 	authModule, err := auth.NewAuthModule(auth.AuthModuleConfig{
 		Config:         cfg,
-		Logger:         log.Default(),
-		ZapLogger:      logger,
+		LoggerManager:  loggerManager,
 		ConsoleEnabled: os.Getenv("CONSOLE_ENABLED") != "false",
 	})
 	if err != nil {
-		logger.Error("Failed to initialize auth module", zap.Error(err))
+		appLogger.Error("Failed to initialize auth module", logger.Err("error", err))
 		os.Exit(1)
 	}
 	defer authModule.Close()
 
-	logger.Info("Auth module initialized successfully")
+	appLogger.Info("Auth module initialized successfully")
 
 	// Start cleanup routine
 	authModule.StartCleanupRoutine()
@@ -133,9 +140,9 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		logger.Info("Server starting on port", zap.Int("port", cfg.Server.Port))
+		appLogger.Info("Server starting on port", logger.Int("port", cfg.Server.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("Server failed to start", zap.Error(err))
+			appLogger.Error("Server failed to start", logger.Err("error", err))
 		}
 	}()
 
@@ -144,7 +151,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down server...")
+	appLogger.Info("Shutting down server...")
 
 	// Create a deadline to wait for
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -152,8 +159,8 @@ func main() {
 
 	// Attempt graceful shutdown
 	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("Server forced to shutdown", zap.Error(err))
+		appLogger.Error("Server forced to shutdown", logger.Err("error", err))
 	}
 
-	logger.Info("Server exited")
+	appLogger.Info("Server exited")
 }

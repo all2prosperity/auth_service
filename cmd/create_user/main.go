@@ -12,10 +12,9 @@ import (
 	"github.com/all2prosperity/auth_service/config"
 	"github.com/all2prosperity/auth_service/dao"
 	"github.com/all2prosperity/auth_service/database"
+	"github.com/all2prosperity/auth_service/internal/logger"
 	"github.com/all2prosperity/auth_service/models"
 	"github.com/all2prosperity/auth_service/services"
-
-	"go.uber.org/zap"
 )
 
 type output struct {
@@ -42,11 +41,6 @@ func main() {
 		log.Fatal("必须提供 --email 或 --phone 其中之一")
 	}
 
-	// Logger
-	zl, _ := zap.NewProduction()
-	defer zl.Sync()
-	sugar := zl.Sugar()
-
 	// Load config
 	var (
 		cfg *config.Config
@@ -61,8 +55,16 @@ func main() {
 		log.Fatalf("加载配置失败: %v", err)
 	}
 
+	// Initialize logger manager
+	loggerConfig := cfg.Logging.ToLoggerConfig()
+	loggerManager, err := logger.NewManager(loggerConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer loggerManager.Close()
+
 	// Init DB and migrate
-	db, err := database.NewDatabase(&cfg.Database, sugar)
+	db, err := database.NewDatabase(&cfg.Database, loggerManager.GetZapSugarLogger())
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
 	}
