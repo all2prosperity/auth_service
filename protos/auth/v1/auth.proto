@@ -1,0 +1,205 @@
+syntax = "proto3";
+
+package auth.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/empty.proto";
+// option go_package = "aibro/api/generated/go/auth/v1;authv1";
+import "google/protobuf/timestamp.proto";
+
+// ===========================================================
+// ⚙️  通用结构
+// ===========================================================
+message TokenPair {
+  string access_token = 1;
+  string refresh_token = 2;
+}
+
+message UserInfo {
+  string user_id = 1;
+  repeated string roles = 2;
+  google.protobuf.Timestamp created = 3;
+}
+
+// ===========================================================
+// 1️⃣  本地账号 / Token 生命周期
+// ===========================================================
+message RegisterRequest {
+  oneof identifier {
+    string email = 1;
+    string phone_number = 2; // E.164 格式，如 "+886912345678"
+  }
+  string password = 3;
+}
+
+message LoginRequest {
+  oneof identifier {
+    string email = 1 [(buf.validate.field).string.email = true];
+    string phone_number = 2;
+  }
+  string password = 3;
+}
+
+// Dedicated responses to satisfy standard RPC response naming
+message RegisterResponse {
+  UserInfo user = 1;
+  TokenPair tokens = 2;
+}
+
+message LoginResponse {
+  UserInfo user = 1;
+  TokenPair tokens = 2;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  TokenPair tokens = 1;
+}
+
+message StartPasswordResetRequest {
+  oneof identifier {
+    string email = 1 [(buf.validate.field).string.email = true];
+    string phone_number = 2;
+  }
+}
+
+message CompletePasswordResetRequest {
+  string token = 1;
+  string new_password = 2;
+}
+
+// ===== 免密验证码登录（邮箱或手机，两步流程） =====
+message StartCodeLoginRequest {
+  oneof identifier {
+    string email = 1 [(buf.validate.field).string.email = true];
+    string phone_number = 2;
+  }
+}
+
+message CompleteCodeLoginRequest {
+  oneof identifier {
+    string email = 1 [(buf.validate.field).string.email = true];
+    string phone_number = 2;
+  }
+  string code = 3; // 服务器发出的 6-8 位数字 / Magic-Link token
+}
+
+message CompleteCodeLoginResponse {
+  UserInfo user = 1;
+  TokenPair tokens = 2;
+}
+
+// ===== Code-based registration (SMS, two steps) =====
+message StartCodeRegisterRequest {
+  // For registration via SMS, only phone number is accepted
+  string phone_number = 1; // E.164 format, e.g. "+8613812345678"
+}
+
+message CompleteCodeRegisterRequest {
+  string phone_number = 1; // E.164 format, e.g. "+8613812345678"
+  string code = 2;         // SMS verification code
+  string password = 3;     // New account password
+}
+
+message CompleteCodeRegisterResponse {
+  UserInfo user = 1;
+  TokenPair tokens = 2;
+}
+
+// ===== 服务定义 =====
+service AuthService {
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  rpc GetMe(GetMeRequest) returns (GetMeResponse);
+
+  // password reset (email or SMS)
+  rpc StartPasswordReset(StartPasswordResetRequest) returns (google.protobuf.Empty);
+  rpc CompletePasswordReset(CompletePasswordResetRequest) returns (google.protobuf.Empty);
+
+  // password-less code login (email or SMS)
+  rpc StartCodeLogin(StartCodeLoginRequest) returns (google.protobuf.Empty);
+  rpc CompleteCodeLogin(CompleteCodeLoginRequest) returns (CompleteCodeLoginResponse);
+
+  // code-based registration (SMS)
+  rpc StartCodeRegister(StartCodeRegisterRequest) returns (google.protobuf.Empty);
+  rpc CompleteCodeRegister(CompleteCodeRegisterRequest) returns (CompleteCodeRegisterResponse);
+}
+
+message LogoutRequest {}
+message LogoutResponse {}
+
+message GetMeRequest {}
+message GetMeResponse {
+  UserInfo user = 1;
+}
+
+// ===========================================================
+// 2️⃣  社交登录（保持不变）
+// ===========================================================
+message OAuthStartRequest {
+  string provider = 1;
+}
+message OAuthStartResponse {
+  string auth_url = 1;
+}
+
+message OAuthCallbackRequest {
+  string provider = 1;
+  string code = 2;
+  string state = 3;
+}
+message OAuthCallbackResponse {
+  UserInfo user = 1;
+  TokenPair tokens = 2;
+}
+
+service SocialAuthService {
+  rpc OAuthStart(OAuthStartRequest) returns (OAuthStartResponse);
+  rpc OAuthCallback(OAuthCallbackRequest) returns (OAuthCallbackResponse);
+}
+
+// ===========================================================
+// 3️⃣  后台管理与审计（保持不变）
+// ===========================================================
+message UpdateUserRolesRequest {
+  string user_id = 1;
+  repeated string roles = 2;
+}
+message ListRolesResponse {
+  repeated string roles = 1;
+}
+
+message ListAuditLogsRequest {
+  string user_id = 1;
+  string action = 2;
+  google.protobuf.Timestamp since = 3;
+  google.protobuf.Timestamp until = 4;
+  uint32 page = 5;
+  uint32 size = 6;
+}
+message AuditEntry {
+  string id = 1;
+  string user_id = 2;
+  string action = 3;
+  string ip = 4;
+  string user_agent = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string extra_json = 7;
+}
+message ListAuditLogsResponse {
+  repeated AuditEntry entries = 1;
+  uint32 next_page = 2;
+}
+
+service AuthAdminService {
+  rpc UpdateUserRoles(UpdateUserRolesRequest) returns (google.protobuf.Empty);
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse);
+  rpc ListAuditLogs(ListAuditLogsRequest) returns (ListAuditLogsResponse);
+}
+
+message ListRolesRequest {}

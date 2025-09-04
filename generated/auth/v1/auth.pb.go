@@ -1878,8 +1878,8 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x10AuthAdminService\x12J\n" +
 	"\x0fUpdateUserRoles\x12\x1f.auth.v1.UpdateUserRolesRequest\x1a\x16.google.protobuf.Empty\x12B\n" +
 	"\tListRoles\x12\x19.auth.v1.ListRolesRequest\x1a\x1a.auth.v1.ListRolesResponse\x12N\n" +
-	"\rListAuditLogs\x12\x1d.auth.v1.ListAuditLogsRequest\x1a\x1e.auth.v1.ListAuditLogsResponseB|\n" +
-	"\vcom.auth.v1B\tAuthProtoP\x01Z%auth_service/generated/auth/v1;authv1\xa2\x02\x03AXX\xaa\x02\aAuth.V1\xca\x02\aAuth\\V1\xe2\x02\x13Auth\\V1\\GPBMetadata\xea\x02\bAuth::V1b\x06proto3"
+	"\rListAuditLogs\x12\x1d.auth.v1.ListAuditLogsRequest\x1a\x1e.auth.v1.ListAuditLogsResponseB\x96\x01\n" +
+	"\vcom.auth.v1B\tAuthProtoP\x01Z?github.com/all2prosperity/auth_service/generated/auth/v1;authv1\xa2\x02\x03AXX\xaa\x02\aAuth.V1\xca\x02\aAuth\\V1\xe2\x02\x13Auth\\V1\\GPBMetadata\xea\x02\bAuth::V1b\x06proto3"
 
 var (
 	file_auth_v1_auth_proto_rawDescOnce sync.Once

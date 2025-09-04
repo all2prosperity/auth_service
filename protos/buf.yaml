@@ -1,0 +1,14 @@
+# For details on buf.yaml configuration, visit https://buf.build/docs/configuration/v2/buf-yaml
+version: v2
+deps:
+  - buf.build/protocolbuffers/wellknowntypes:v23.4
+  - buf.build/googleapis/googleapis
+  - buf.build/bufbuild/protovalidate:v0.13.0
+lint:
+  use:
+    - STANDARD
+  rpc_allow_google_protobuf_empty_responses: true
+  service_suffix: Service
+breaking:
+  use:
+    - FILE
