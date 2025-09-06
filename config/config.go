@@ -144,6 +144,7 @@ var (
 func LoadConfig(configFiles ...string) (*Config, error) {
 	// Set default configuration files
 	defaultFiles := []string{
+		"configs/auth.yaml",
 		"configs/local.yaml",
 		"configs/auth.yaml",
 		"config.yaml",
