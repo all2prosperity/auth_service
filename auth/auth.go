@@ -25,6 +25,20 @@ import (
 	"gorm.io/gorm"
 )
 
+// UserRegistrationInfo contains user information passed to registration callbacks
+// This is an alias to the handlers package type for public API consistency
+type UserRegistrationInfo = handlers.UserRegistrationInfo
+
+// RegistrationHook is a callback function called after successful user registration
+// This is an alias to the handlers package type for public API consistency
+type RegistrationHook = handlers.RegistrationHook
+
+// AuthHooks contains all available hooks for the auth module
+type AuthHooks struct {
+	// OnRegistered is called after successful user registration
+	OnRegistered RegistrationHook
+}
+
 // AuthModule represents the auth service as a module
 type AuthModule struct {
 	config        *config.Config
@@ -34,6 +48,7 @@ type AuthModule struct {
 	loggerManager *logger.Manager
 	redisClient   *redis.Client
 	ownRedis      bool // whether we created the redis client
+	hooks         *AuthHooks
 }
 
 // AuthModuleConfig contains configuration for initializing the auth module
@@ -53,6 +68,8 @@ type AuthModuleConfig struct {
 	ZapLogger *zap.Logger
 	// Console enabled (default: true)
 	ConsoleEnabled bool
+	// Hooks for various auth events (optional)
+	Hooks *AuthHooks
 }
 
 // NewAuthModule creates a new auth module instance
@@ -138,6 +155,13 @@ func NewAuthModule(cfg AuthModuleConfig) (*AuthModule, error) {
 		}
 	}
 
+	// Set up hooks
+	if cfg.Hooks != nil {
+		module.hooks = cfg.Hooks
+	} else {
+		module.hooks = &AuthHooks{}
+	}
+
 	// Initialize services and handlers
 	err = module.initializeServices()
 	if err != nil {
@@ -188,6 +212,9 @@ func (m *AuthModule) initializeServices() error {
 		regCodeService,
 		m.loggerManager.GetStdLogger(),
 	)
+
+	// Set the registration hook in the handler
+	m.authHandler.SetRegistrationHook(m.hooks.OnRegistered)
 
 	return nil
 }
@@ -336,4 +363,31 @@ func (m *AuthModule) GetZapLogger() *zap.Logger {
 // GetStdLogger returns the standard logger (for legacy compatibility)
 func (m *AuthModule) GetStdLogger() *log.Logger {
 	return m.loggerManager.GetStdLogger()
+}
+
+// SetRegistrationHook sets the registration callback hook
+func (m *AuthModule) SetRegistrationHook(hook RegistrationHook) {
+	if m.hooks == nil {
+		m.hooks = &AuthHooks{}
+	}
+	m.hooks.OnRegistered = hook
+	if m.authHandler != nil {
+		m.authHandler.SetRegistrationHook(hook)
+	}
+}
+
+// GetRegistrationHook returns the current registration hook
+func (m *AuthModule) GetRegistrationHook() RegistrationHook {
+	if m.hooks == nil {
+		return nil
+	}
+	return m.hooks.OnRegistered
+}
+
+// SetHooks sets all hooks at once
+func (m *AuthModule) SetHooks(hooks *AuthHooks) {
+	m.hooks = hooks
+	if m.authHandler != nil && hooks != nil {
+		m.authHandler.SetRegistrationHook(hooks.OnRegistered)
+	}
 }

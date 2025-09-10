@@ -18,15 +18,29 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// UserRegistrationInfo contains user information passed to registration callbacks
+type UserRegistrationInfo struct {
+	UserID      string
+	Email       *string
+	PhoneNumber *string
+	Roles       []string
+	CreatedAt   time.Time
+	Method      string // "email", "phone", "sms_code", etc.
+}
+
+// RegistrationHook is a callback function called after successful user registration
+type RegistrationHook func(ctx context.Context, user *UserRegistrationInfo) error
+
 // AuthHandler implements the AuthService
 type AuthHandler struct {
-	userDAO         *dao.UserDAO
-	passwordService *services.PasswordService
-	jwtService      *services.JWTService
-	codeService     *services.CodeService
-	regCodeService  *services.RegistrationCodeService
-	logger          *log.Logger
-	db              *database.DB
+	userDAO          *dao.UserDAO
+	passwordService  *services.PasswordService
+	jwtService       *services.JWTService
+	codeService      *services.CodeService
+	regCodeService   *services.RegistrationCodeService
+	logger           *log.Logger
+	db               *database.DB
+	registrationHook RegistrationHook
 }
 
 // NewAuthHandler creates a new auth handler
@@ -48,6 +62,34 @@ func NewAuthHandler(
 		logger:          logger,
 		db:              db,
 	}
+}
+
+// SetRegistrationHook sets the callback function to be called after successful registration
+func (h *AuthHandler) SetRegistrationHook(hook RegistrationHook) {
+	h.registrationHook = hook
+}
+
+// executeRegistrationHook safely executes the registration hook if it's set
+func (h *AuthHandler) executeRegistrationHook(ctx context.Context, user *models.User, method string) {
+	if h.registrationHook == nil {
+		return
+	}
+
+	userInfo := &UserRegistrationInfo{
+		UserID:      user.ID,
+		Email:       user.Email,
+		PhoneNumber: user.PhoneNumber,
+		Roles:       user.Roles,
+		CreatedAt:   user.CreatedAt,
+		Method:      method,
+	}
+
+	// Execute hook in a separate goroutine to avoid blocking the response
+	go func() {
+		if err := h.registrationHook(ctx, userInfo); err != nil {
+			h.logger.Printf("Registration hook failed for user %s: %v", user.ID, err)
+		}
+	}()
 }
 
 // Register implements user registration
@@ -122,6 +164,15 @@ func (h *AuthHandler) Register(
 
 	// Log audit event
 	h.logAuditEvent(ctx, user.ID, models.AuditActionRegister, nil)
+
+	// Execute registration hook
+	method := "password"
+	if email != nil {
+		method = "email"
+	} else if phoneNumber != nil {
+		method = "phone"
+	}
+	h.executeRegistrationHook(ctx, user, method)
 
 	return connect.NewResponse(&authv1.RegisterResponse{
 		User: &authv1.UserInfo{
@@ -584,6 +635,9 @@ func (h *AuthHandler) CompleteCodeRegister(
 	h.logAuditEvent(ctx, user.ID, models.AuditActionRegister, map[string]interface{}{
 		"method": "sms_code",
 	})
+
+	// Execute registration hook
+	h.executeRegistrationHook(ctx, user, "sms_code")
 
 	return connect.NewResponse(&authv1.CompleteCodeRegisterResponse{
 		User: &authv1.UserInfo{

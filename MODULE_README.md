@@ -128,6 +128,7 @@ type AuthModuleConfig struct {
     ZapLogger      *zap.Logger      // Zap logger
     ZerologLogger  *zerolog.Logger  // Zerolog logger
     ConsoleEnabled bool             // Enable admin console (default: true)
+    Hooks          *AuthHooks       // Event hooks for custom business logic
 }
 ```
 
@@ -148,6 +149,57 @@ router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
 })
 ```
+
+#### Registration Hooks
+
+Registration hooks allow you to execute custom business logic after successful user registration:
+
+```go
+// Define your registration hook
+func onUserRegistered(ctx context.Context, user *auth.UserRegistrationInfo) error {
+    log.Printf("New user registered: %s via %s", user.UserID, user.Method)
+    
+    // Your custom business logic here:
+    // - Create user profile in other systems
+    // - Send welcome notifications
+    // - Trigger analytics events
+    // - Update other database tables
+    
+    return createUserProfile(user)
+}
+
+// Method 1: Set hooks during initialization
+hooks := &auth.AuthHooks{
+    OnRegistered: onUserRegistered,
+}
+
+authModule, err := auth.NewAuthModule(auth.AuthModuleConfig{
+    DB: db,
+    Hooks: hooks,
+})
+
+// Method 2: Set hooks after initialization
+authModule.SetRegistrationHook(onUserRegistered)
+```
+
+The hook receives detailed user information:
+```go
+type UserRegistrationInfo struct {
+    UserID      string     // Unique user identifier
+    Email       *string    // User email (may be nil)
+    PhoneNumber *string    // User phone number (may be nil)
+    Roles       []string   // User roles
+    CreatedAt   time.Time  // Registration timestamp
+    Method      string     // "email", "phone", "sms_code", etc.
+}
+```
+
+**Important Notes:**
+- Hooks are executed asynchronously to avoid blocking the registration response
+- Hook failures are logged but don't affect registration success
+- Design hooks to be fast and resilient
+
+For detailed documentation, see [REGISTRATION_HOOKS.md](REGISTRATION_HOOKS.md).
 
 ## API Endpoints
 

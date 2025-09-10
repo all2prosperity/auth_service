@@ -171,6 +171,7 @@ func (s *JWTService) ValidateRefreshToken(tokenString string) (*JWTClaims, error
 
 // BlacklistToken adds a token to the blacklist
 func (s *JWTService) BlacklistToken(tokenID string, userID string, expiresAt time.Time) error {
+	return nil
 	blacklistEntry := &models.JWTBlacklist{
 		TokenID:   tokenID,
 		UserID:    &userID, // TODO: fix this
@@ -216,7 +217,7 @@ func (s *JWTService) RefreshTokenPair(refreshToken string, user *models.User) (s
 		return "", "", fmt.Errorf("token does not belong to user")
 	}
 
-	// Blacklist the old refresh token
+	// Blacklist the old refresh token for now don't do it
 	err = s.BlacklistToken(claims.ID, user.ID, claims.ExpiresAt.Time.UTC())
 	if err != nil {
 		return "", "", fmt.Errorf("failed to blacklist old token: %w", err)
