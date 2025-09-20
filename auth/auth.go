@@ -199,8 +199,14 @@ func (m *AuthModule) initializeServices() error {
 
 	// Use zerolog logger for services that require it
 	zerologLogger := m.loggerManager.GetZerologLogger()
-	codeService := services.NewCodeService(m.db, &m.config.SMTP, &m.config.SMS, zerologLogger)
-	regCodeService := services.NewRegistrationCodeService(m.redisClient, zerologLogger)
+	codeService, err := services.NewCodeService(m.db, &m.config.SMTP, &m.config.SMS, zerologLogger)
+	if err != nil {
+		return fmt.Errorf("failed to create code service: %w", err)
+	}
+	regCodeService, err := services.NewRegistrationCodeService(m.redisClient, &m.config.SMS, zerologLogger)
+	if err != nil {
+		return fmt.Errorf("failed to create registration code service: %w", err)
+	}
 
 	// Initialize auth handler
 	m.authHandler = handlers.NewAuthHandler(

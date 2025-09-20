@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/all2prosperity/auth_service/config"
 	"github.com/go-redis/redis/v8"
 	"github.com/rs/zerolog"
 )
@@ -16,20 +17,27 @@ import (
 type RegistrationCodeService struct {
 	redisClient  *redis.Client
 	logger       zerolog.Logger
+	smsService   *SMSService
 	codeLength   int
 	codeExpiry   time.Duration
 	sendInterval time.Duration
 }
 
 // NewRegistrationCodeService creates a new RegistrationCodeService
-func NewRegistrationCodeService(redisClient *redis.Client, logger zerolog.Logger) *RegistrationCodeService {
+func NewRegistrationCodeService(redisClient *redis.Client, smsConfig *config.SMSConfig, logger zerolog.Logger) (*RegistrationCodeService, error) {
+	smsService, err := NewSMSService(smsConfig, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SMS service: %w", err)
+	}
+
 	return &RegistrationCodeService{
 		redisClient:  redisClient,
 		logger:       logger,
+		smsService:   smsService,
 		codeLength:   6,
 		codeExpiry:   10 * time.Minute,
 		sendInterval: 60 * time.Second,
-	}
+	}, nil
 }
 
 // GenerateCode generates a random numeric verification code
@@ -119,11 +127,14 @@ func (s *RegistrationCodeService) VerifyPhoneRegisterCode(ctx context.Context, p
 	return true, nil
 }
 
-// deliverSMSCode is intentionally left blank for user to integrate actual SMS provider
+// deliverSMSCode sends SMS using the configured SMS service
 func (s *RegistrationCodeService) deliverSMSCode(phoneNumber, code string) error {
-	// NOTE: Intentionally left blank. Implement actual SMS sending here.
-	// TODO: Implement actual SMS sending here.
-	return nil
+	if s.smsService == nil {
+		s.logger.Debug().Str("phone", phoneNumber).Str("code", code).Msg("SMS service not configured, skipping SMS send")
+		return nil
+	}
+
+	return s.smsService.SendSMS(phoneNumber, code, "registration")
 }
 
 func (s *RegistrationCodeService) redisKeyCode(phone string) string {

@@ -21,6 +21,7 @@ type CodeService struct {
 	db           *database.DB
 	smtpConfig   *config.SMTPConfig
 	smsConfig    *config.SMSConfig
+	smsService   *SMSService
 	logger       zerolog.Logger
 	codeLength   int
 	codeExpiry   time.Duration
@@ -28,16 +29,22 @@ type CodeService struct {
 }
 
 // NewCodeService creates a new code service
-func NewCodeService(db *database.DB, smtpConfig *config.SMTPConfig, smsConfig *config.SMSConfig, logger zerolog.Logger) *CodeService {
+func NewCodeService(db *database.DB, smtpConfig *config.SMTPConfig, smsConfig *config.SMSConfig, logger zerolog.Logger) (*CodeService, error) {
+	smsService, err := NewSMSService(smsConfig, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SMS service: %w", err)
+	}
+
 	return &CodeService{
 		db:           db,
 		smtpConfig:   smtpConfig,
 		smsConfig:    smsConfig,
+		smsService:   smsService,
 		logger:       logger,
 		codeLength:   6,
 		codeExpiry:   10 * time.Minute,
 		sendInterval: 60 * time.Second,
-	}
+	}, nil
 }
 
 // GenerateCode generates a random numeric code
@@ -238,23 +245,12 @@ Auth Service
 
 // sendSMSWithCode sends an SMS with verification code
 func (s *CodeService) sendSMSWithCode(phoneNumber, code, purpose string) error {
-	if s.smsConfig.TwilioSID == "" || s.smsConfig.TwilioToken == "" {
-		s.logger.Debug().Str("phone", phoneNumber).Str("code", code).Msg("SMS not configured, skipping SMS send")
-		return nil // Skip sending in development
+	if s.smsService == nil {
+		s.logger.Debug().Str("phone", phoneNumber).Str("code", code).Msg("SMS service not configured, skipping SMS send")
+		return nil
 	}
 
-	// This is a simplified implementation
-	// In production, you would use Twilio SDK or similar
-	message := fmt.Sprintf("Your verification code for %s is: %s. Valid for %d minutes.",
-		purpose, code, int(s.codeExpiry.Minutes()))
-
-	// TODO: Implement actual SMS sending with Twilio SDK
-	s.logger.Info().
-		Str("phone", phoneNumber).
-		Str("message", message).
-		Msg("SMS would be sent (not implemented)")
-
-	return nil
+	return s.smsService.SendSMS(phoneNumber, code, purpose)
 }
 
 // CleanupExpiredCodes removes expired codes from the database

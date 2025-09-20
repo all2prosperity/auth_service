@@ -66,10 +66,14 @@ type SMTPConfig struct {
 }
 
 type SMSConfig struct {
-	Provider    string `koanf:"provider"` // twilio, aliyun
-	TwilioSID   string `koanf:"twilio_sid"`
-	TwilioToken string `koanf:"twilio_token"`
-	TwilioFrom  string `koanf:"twilio_from"`
+	Provider        string `koanf:"provider"` // twilio, aliyun
+	TwilioSID       string `koanf:"twilio_sid"`
+	TwilioToken     string `koanf:"twilio_token"`
+	TwilioFrom      string `koanf:"twilio_from"`
+	AliyunAccessKey string `koanf:"aliyun_access_key"`
+	AliyunSecretKey string `koanf:"aliyun_secret_key"`
+	AliyunSignName  string `koanf:"aliyun_sign_name"`
+	AliyunTemplate  string `koanf:"aliyun_template"`
 }
 
 type OAuthConfig struct {
@@ -144,7 +148,6 @@ var (
 func LoadConfig(configFiles ...string) (*Config, error) {
 	// Set default configuration files
 	defaultFiles := []string{
-		"configs/auth.yaml",
 		"configs/local.yaml",
 		"configs/auth.yaml",
 		"config.yaml",
@@ -231,10 +234,14 @@ func setDefaults(k *koanf.Koanf) {
 		"smtp.tls":        true,
 
 		// SMS defaults
-		"sms.provider":     "twilio",
-		"sms.twilio_sid":   "",
-		"sms.twilio_token": "",
-		"sms.twilio_from":  "",
+		"sms.provider":          "twilio",
+		"sms.twilio_sid":        "",
+		"sms.twilio_token":      "",
+		"sms.twilio_from":       "",
+		"sms.aliyun_access_key": "",
+		"sms.aliyun_secret_key": "",
+		"sms.aliyun_sign_name":  "",
+		"sms.aliyun_template":   "",
 
 		// OAuth defaults
 		"oauth.base_url":             "http://localhost:8080",
