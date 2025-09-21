@@ -134,38 +134,21 @@ func (ps *PasswordService) IsStrongPassword(password string) error {
 	if len(password) < 8 {
 		return errors.New("password must be at least 8 characters long")
 	}
+	if len(password) > 32 {
+		return errors.New("password must be no more than 32 characters long")
+	}
 
-	var (
-		hasUpper   = false
-		hasLower   = false
-		hasNumber  = false
-		hasSpecial = false
-	)
-
+	// Check for at least one uppercase letter
+	hasUpper := false
 	for _, char := range password {
-		switch {
-		case 'A' <= char && char <= 'Z':
+		if 'A' <= char && char <= 'Z' {
 			hasUpper = true
-		case 'a' <= char && char <= 'z':
-			hasLower = true
-		case '0' <= char && char <= '9':
-			hasNumber = true
-		case strings.ContainsRune("!@#$%^&*()_+-=[]{}|;:,.<>?", char):
-			hasSpecial = true
+			break
 		}
 	}
 
 	if !hasUpper {
 		return errors.New("password must contain at least one uppercase letter")
-	}
-	if !hasLower {
-		return errors.New("password must contain at least one lowercase letter")
-	}
-	if !hasNumber {
-		return errors.New("password must contain at least one number")
-	}
-	if !hasSpecial {
-		return errors.New("password must contain at least one special character")
 	}
 
 	return nil
