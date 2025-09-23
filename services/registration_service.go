@@ -36,7 +36,7 @@ func NewRegistrationCodeService(redisClient *redis.Client, smsConfig *config.SMS
 		smsService:   smsService,
 		codeLength:   6,
 		codeExpiry:   10 * time.Minute,
-		sendInterval: 60 * time.Second,
+		sendInterval: 120 * time.Second,
 	}, nil
 }
 
