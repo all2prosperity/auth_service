@@ -36,7 +36,6 @@ func (m *MigrationManager) RunMigrations() error {
 	err := m.db.AutoMigrate(
 		&models.User{},
 		&models.SocialAccount{},
-		&models.JWTBlacklist{},
 		&models.PasswordResetToken{},
 		&models.CodeLoginToken{},
 		&models.AuditLog{},
@@ -158,7 +157,6 @@ func (m *MigrationManager) RollbackMigrations() error {
 		"login_attempts",
 		"code_login_tokens",
 		"password_reset_tokens",
-		"jwt_blacklist",
 		"social_accounts",
 		"users",
 	}
@@ -219,7 +217,7 @@ func timePtr(t time.Time) *time.Time {
 // CheckHealth checks if the database schema is up to date
 func (m *MigrationManager) CheckHealth() error {
 	// Simple check: ensure all tables exist
-	tables := []string{"users", "social_accounts", "jwt_blacklist", "password_reset_tokens", "code_login_tokens", "audit_logs", "login_attempts"}
+	tables := []string{"users", "social_accounts", "password_reset_tokens", "code_login_tokens", "audit_logs", "login_attempts"}
 
 	for _, table := range tables {
 		var exists bool

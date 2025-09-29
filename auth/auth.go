@@ -195,7 +195,7 @@ func (m *AuthModule) initializeServices() error {
 
 	// Initialize services
 	passwordService := services.NewPasswordService()
-	jwtService := services.NewJWTService(&m.config.JWT, m.db)
+	jwtService := services.NewJWTService(&m.config.JWT)
 
 	// Use zerolog logger for services that require it
 	zerologLogger := m.loggerManager.GetZerologLogger()

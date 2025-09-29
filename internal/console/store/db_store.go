@@ -206,27 +206,21 @@ func (s *DBStore) UpdateUserRole(ctx context.Context, userID, role string) error
 
 // RevokeUserTokens revokes all tokens for a user
 func (s *DBStore) RevokeUserTokens(ctx context.Context, userID string) (int, error) {
-	id, err := ulid.Parse(userID)
-	if err != nil {
+	if _, err := ulid.Parse(userID); err != nil {
 		return 0, fmt.Errorf("invalid user ID: %w", err)
 	}
 
-	// Delete all JWT blacklist entries for the user
-	result := s.db.WithContext(ctx).Where("user_id = ?", id).Delete(&models.JWTBlacklist{})
-	if result.Error != nil {
-		return 0, fmt.Errorf("failed to revoke user tokens: %w", result.Error)
-	}
-
-	// Log audit event
+	// Without a server-side blacklist, token revocation relies on expiration.
 	s.auditLogger.Log(ctx, audit.LogRequest{
 		UserID: userID,
 		Action: "revoke_tokens",
 		Details: map[string]interface{}{
-			"tokens_revoked": result.RowsAffected,
+			"tokens_revoked": 0,
+			"note":           "no blacklist table; tokens expire naturally",
 		},
 	})
 
-	return int(result.RowsAffected), nil
+	return 0, nil
 }
 
 // ListAuditLogs retrieves audit logs

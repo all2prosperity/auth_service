@@ -103,7 +103,6 @@ func (db *DB) AutoMigrate() error {
 	err := db.DB.AutoMigrate(
 		&models.User{},
 		&models.SocialAccount{},
-		&models.JWTBlacklist{},
 		&models.PasswordResetToken{},
 		&models.CodeLoginToken{},
 		&models.AuditLog{},
@@ -196,11 +195,6 @@ func (db *DB) Health() error {
 
 // CleanupExpiredTokens removes expired tokens from various tables
 func (db *DB) CleanupExpiredTokens() error {
-	// Clean up expired JWT blacklist entries
-	if err := db.Where("expires_at < ?", time.Now()).Delete(&models.JWTBlacklist{}).Error; err != nil {
-		return fmt.Errorf("failed to cleanup expired JWT blacklist: %w", err)
-	}
-
 	// Clean up expired password reset tokens
 	if err := db.Where("expires_at < ?", time.Now()).Delete(&models.PasswordResetToken{}).Error; err != nil {
 		return fmt.Errorf("failed to cleanup expired password reset tokens: %w", err)

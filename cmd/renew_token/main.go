@@ -78,7 +78,7 @@ func main() {
 	// Prepare services/dao
 	userDAO := dao.NewUserDAO(db)
 	passwordService := services.NewPasswordService()
-	jwtService := services.NewJWTService(&cfg.JWT, db)
+	jwtService := services.NewJWTService(&cfg.JWT)
 
 	// Get user by identifier
 	var identifier string

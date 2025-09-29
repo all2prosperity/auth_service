@@ -258,12 +258,6 @@ auth_service/srv/
 - `expires_at` (TIMESTAMPTZ): 过期时间
 - `used` (BOOLEAN): 是否已使用
 
-### jwt_blacklist - JWT 黑名单
-- `id` (UUID): 记录唯一标识
-- `token_id` (TEXT): JWT ID
-- `user_id` (UUID): 用户ID
-- `expires_at` (TIMESTAMPTZ): Token 过期时间
-
 ### audit_logs - 审计日志
 - `id` (UUID): 记录唯一标识
 - `user_id` (UUID): 用户ID

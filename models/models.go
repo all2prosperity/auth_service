@@ -62,7 +62,6 @@ type User struct {
 	// Relationships
 	SocialAccounts      []SocialAccount      `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"social_accounts,omitempty"`
 	PasswordResetTokens []PasswordResetToken `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
-	JWTBlacklist        []JWTBlacklist       `gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE" json:"-"`
 	AuditLogs           []AuditLog           `gorm:"foreignKey:UserID" json:"-"`
 }
 
@@ -116,22 +115,6 @@ type SocialAccount struct {
 // TableName specifies the table name for SocialAccount model
 func (SocialAccount) TableName() string {
 	return "social_accounts"
-}
-
-// JWTBlacklist represents a blacklisted JWT token
-type JWTBlacklist struct {
-	BaseModel
-	TokenID   string    `gorm:"type:text;not null;uniqueIndex;column:token_id" json:"token_id"`
-	UserID    *string   `gorm:"type:varchar(26);index" json:"user_id,omitempty"`
-	ExpiresAt time.Time `gorm:"not null;index;column:expires_at" json:"expires_at"`
-
-	// Relationships
-	User *User `gorm:"foreignKey:UserID" json:"user,omitempty"`
-}
-
-// TableName specifies the table name for JWTBlacklist model
-func (JWTBlacklist) TableName() string {
-	return "jwt_blacklist"
 }
 
 // PasswordResetToken represents a password reset token

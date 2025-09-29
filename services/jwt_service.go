@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/all2prosperity/auth_service/config"
-	"github.com/all2prosperity/auth_service/database"
 	"github.com/all2prosperity/auth_service/models"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -18,16 +17,14 @@ JWT Token Refresh Strategies:
 
 1. Full Token Rotation (RefreshTokenPair):
    - Both access token and refresh token are regenerated
-   - Old refresh token is blacklisted immediately
+   - Clients should discard the previous refresh token immediately
    - Highest security level
-   - More database writes (blacklist operations)
    - Recommended for high-security applications
 
 2. Access Token Only (RefreshAccessTokenOnly):
    - Only access token is regenerated
    - Refresh token remains the same
    - Lower security level (refresh token can be reused)
-   - Fewer database writes
    - Suitable for performance-critical applications
 
 3. Configurable Rotation (RefreshTokenPairWithRotation):
@@ -51,14 +48,12 @@ type JWTClaims struct {
 // JWTService handles JWT operations
 type JWTService struct {
 	config *config.JWTConfig
-	db     *database.DB
 }
 
 // NewJWTService creates a new JWT service
-func NewJWTService(cfg *config.JWTConfig, db *database.DB) *JWTService {
+func NewJWTService(cfg *config.JWTConfig) *JWTService {
 	return &JWTService{
 		config: cfg,
-		db:     db,
 	}
 }
 
@@ -127,15 +122,6 @@ func (s *JWTService) ValidateAccessToken(tokenString string) (*JWTClaims, error)
 		return nil, fmt.Errorf("invalid token")
 	}
 
-	// Check if token is blacklisted
-	blacklisted, err := s.IsTokenBlacklisted(claims.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check blacklist: %w", err)
-	}
-	if blacklisted {
-		return nil, fmt.Errorf("token is blacklisted")
-	}
-
 	return claims, nil
 }
 
@@ -157,51 +143,7 @@ func (s *JWTService) ValidateRefreshToken(tokenString string) (*JWTClaims, error
 		return nil, fmt.Errorf("invalid token")
 	}
 
-	// Check if token is blacklisted
-	blacklisted, err := s.IsTokenBlacklisted(claims.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check blacklist: %w", err)
-	}
-	if blacklisted {
-		return nil, fmt.Errorf("token is blacklisted")
-	}
-
 	return claims, nil
-}
-
-// BlacklistToken adds a token to the blacklist
-func (s *JWTService) BlacklistToken(tokenID string, userID string, expiresAt time.Time) error {
-	return nil
-	blacklistEntry := &models.JWTBlacklist{
-		TokenID:   tokenID,
-		UserID:    &userID, // TODO: fix this
-		ExpiresAt: expiresAt,
-	}
-
-	result := s.db.Create(blacklistEntry)
-	if result.Error != nil {
-		return fmt.Errorf("failed to blacklist token: %w", result.Error)
-	}
-
-	return nil
-}
-
-// IsTokenBlacklisted checks if a token is blacklisted
-func (s *JWTService) IsTokenBlacklisted(tokenID string) (bool, error) {
-	var count int64
-	res := s.db.Table("jwt_blacklist").Where("token_id = ? AND expires_at > now()", tokenID).Count(&count)
-	if res.Error != nil {
-		return false, fmt.Errorf("failed to check blacklist: %w", res.Error)
-	}
-
-	return count > 0, nil
-}
-
-// BlacklistAllUserTokens blacklists all tokens for a user
-func (s *JWTService) BlacklistAllUserTokens(userID string) error {
-	// This would invalidate all tokens for the user
-	// Implementation depends on how you want to handle this
-	return nil
 }
 
 // RefreshTokenPair generates a new token pair using a refresh token
@@ -215,12 +157,6 @@ func (s *JWTService) RefreshTokenPair(refreshToken string, user *models.User) (s
 	// Verify the token belongs to the user
 	if claims.UserID != user.ID {
 		return "", "", fmt.Errorf("token does not belong to user")
-	}
-
-	// Blacklist the old refresh token for now don't do it
-	err = s.BlacklistToken(claims.ID, user.ID, claims.ExpiresAt.Time.UTC())
-	if err != nil {
-		return "", "", fmt.Errorf("failed to blacklist old token: %w", err)
 	}
 
 	// Generate new token pair
@@ -280,12 +216,7 @@ func (s *JWTService) RefreshTokenPairWithRotation(refreshToken string, user *mod
 	}
 
 	if rotateRefreshToken {
-		// Blacklist the old refresh token for rotation
-		err = s.BlacklistToken(claims.ID, user.ID, claims.ExpiresAt.Time.UTC())
-		if err != nil {
-			return "", "", fmt.Errorf("failed to blacklist old token: %w", err)
-		}
-		// Generate new token pair
+		// Generate new token pair and let old refresh token expire naturally
 		return s.GenerateTokenPair(user)
 	} else {
 		// Only generate new access token, keep the same refresh token
@@ -321,14 +252,4 @@ func (s *JWTService) ExtractUserID(tokenString string) (string, error) {
 	}
 
 	return claims.UserID, nil
-}
-
-// CleanupExpiredBlacklist removes expired tokens from blacklist
-func (s *JWTService) CleanupExpiredBlacklist() error {
-	query := `DELETE FROM jwt_blacklist WHERE expires_at < now()`
-	res := s.db.Exec(query)
-	if res.Error != nil {
-		return fmt.Errorf("failed to cleanup expired blacklist: %w", res.Error)
-	}
-	return nil
 }

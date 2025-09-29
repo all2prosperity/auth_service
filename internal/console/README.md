@@ -255,7 +255,6 @@ Console模块提供以下Prometheus指标：
 Console模块需要以下数据库表：
 - `audit_logs`: 审计日志表（自动创建）
 - `users`: 用户表（共享）
-- `jwt_blacklist`: JWT黑名单表（共享）
 
 ## 安全考虑
 

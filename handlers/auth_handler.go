@@ -314,14 +314,11 @@ func (h *AuthHandler) Logout(
 	// Extract token from context (this would be set by middleware)
 	token := h.extractTokenFromContext(ctx)
 	if token != "" {
-		// Extract token ID and blacklist it
 		userID, err := h.jwtService.ExtractUserID(token)
 		if err != nil {
 			return nil, connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("invalid token: %w", err))
 		}
 		if userID != "" {
-			// In a real implementation, you'd extract the JTI and expiration
-			// and add it to blacklist
 			h.logAuditEvent(ctx, userID, models.AuditActionLogout, nil)
 		}
 	}
