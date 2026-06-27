@@ -9,16 +9,14 @@ import (
 	"time"
 
 	"github.com/all2prosperity/auth_service/config"
+	"github.com/all2prosperity/auth_service/core"
 	"github.com/all2prosperity/auth_service/dao"
 	"github.com/all2prosperity/auth_service/database"
-	"github.com/all2prosperity/auth_service/generated/auth/v1/authv1connect"
-	"github.com/all2prosperity/auth_service/handlers"
 	"github.com/all2prosperity/auth_service/internal/console"
 	"github.com/all2prosperity/auth_service/internal/logger"
 	"github.com/all2prosperity/auth_service/services"
+	"github.com/all2prosperity/auth_service/transport/rest"
 
-	"connectrpc.com/connect"
-	"connectrpc.com/grpcreflect"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
@@ -26,12 +24,12 @@ import (
 )
 
 // UserRegistrationInfo contains user information passed to registration callbacks
-// This is an alias to the handlers package type for public API consistency
-type UserRegistrationInfo = handlers.UserRegistrationInfo
+// This is an alias to the core package type for public API consistency
+type UserRegistrationInfo = core.UserRegistrationInfo
 
 // RegistrationHook is a callback function called after successful user registration
-// This is an alias to the handlers package type for public API consistency
-type RegistrationHook = handlers.RegistrationHook
+// This is an alias to the core package type for public API consistency
+type RegistrationHook = core.RegistrationHook
 
 // AuthHooks contains all available hooks for the auth module
 type AuthHooks struct {
@@ -43,12 +41,14 @@ type AuthHooks struct {
 type AuthModule struct {
 	config        *config.Config
 	db            *database.DB
-	authHandler   *handlers.AuthHandler
+	authCore      *core.AuthCore
 	consoleModule *console.Console
 	loggerManager *logger.Manager
 	redisClient   *redis.Client
 	ownRedis      bool // whether we created the redis client
 	hooks         *AuthHooks
+	jwtService    *services.JWTService
+	blacklist     *services.TokenBlacklist
 }
 
 // AuthModuleConfig contains configuration for initializing the auth module
@@ -172,8 +172,9 @@ func NewAuthModule(cfg AuthModuleConfig) (*AuthModule, error) {
 	// Initialize console if enabled
 	if cfg.ConsoleEnabled {
 		consoleConfig := console.Config{
-			JWTSecret: module.config.JWT.AccessSecret,
-			Enabled:   true,
+			JWTSecret:    module.config.JWT.AccessSecret,
+			Enabled:      true,
+			TokenRevoker: module.blacklist,
 		}
 		module.consoleModule, err = console.NewConsole(module.db.DB, consoleConfig)
 		if err != nil {
@@ -197,71 +198,51 @@ func (m *AuthModule) initializeServices() error {
 	passwordService := services.NewPasswordService()
 	jwtService := services.NewJWTService(&m.config.JWT)
 
+	// Token blacklist for server-side revocation (logout, refresh rotation,
+	// admin "revoke all sessions"). Retain epoch counters at least as long as
+	// the refresh-token lifetime.
+	m.blacklist = services.NewTokenBlacklist(m.redisClient, m.config.JWT.RefreshTokenTTL)
+	jwtService.SetBlacklist(m.blacklist)
+	m.jwtService = jwtService
+
+	loginAttemptDAO := dao.NewLoginAttemptDAO(m.db)
+
+	isProd := m.config.IsProduction()
+
 	// Use zerolog logger for services that require it
 	zerologLogger := m.loggerManager.GetZerologLogger()
-	codeService, err := services.NewCodeService(m.db, &m.config.SMTP, &m.config.SMS, zerologLogger)
+	codeService, err := services.NewCodeService(m.db, &m.config.SMTP, &m.config.SMS, &m.config.Security, m.config.CodeHMACKey(), isProd, zerologLogger)
 	if err != nil {
 		return fmt.Errorf("failed to create code service: %w", err)
 	}
-	regCodeService, err := services.NewRegistrationCodeService(m.redisClient, &m.config.SMS, zerologLogger)
+	regCodeService, err := services.NewRegistrationCodeService(m.redisClient, &m.config.SMS, &m.config.Security, isProd, zerologLogger)
 	if err != nil {
 		return fmt.Errorf("failed to create registration code service: %w", err)
 	}
 
-	// Initialize auth handler
-	m.authHandler = handlers.NewAuthHandler(
+	// Initialize the transport-agnostic auth core
+	m.authCore = core.NewAuthCore(
 		m.db,
 		userDAO,
+		loginAttemptDAO,
 		passwordService,
 		jwtService,
 		codeService,
 		regCodeService,
+		m.blacklist,
+		&m.config.Security,
 		m.loggerManager.GetStdLogger(),
 	)
 
-	// Set the registration hook in the handler
-	m.authHandler.SetRegistrationHook(m.hooks.OnRegistered)
+	// Set the registration hook in the core
+	m.authCore.SetRegistrationHook(m.hooks.OnRegistered)
 
 	return nil
 }
 
-// RegisterRoutes registers auth routes to the provided router
+// RegisterRoutes registers the auth REST API onto the provided router.
 func (m *AuthModule) RegisterRoutes(router chi.Router) {
-	// Connect-RPC handlers for auth service
-	connectOpts := []connect.HandlerOption{
-		connect.WithInterceptors(
-			connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-				return connect.UnaryFunc(func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-					start := time.Now()
-					resp, err := next(ctx, req)
-					duration := time.Since(start)
-					if err != nil {
-						m.loggerManager.GetZapLogger().Error("ConnectRPC call failed",
-							zap.String("procedure", req.Spec().Procedure),
-							zap.Duration("duration", duration),
-							zap.Error(err),
-						)
-					} else {
-						m.loggerManager.GetZapLogger().Info("ConnectRPC call completed",
-							zap.String("procedure", req.Spec().Procedure),
-							zap.Duration("duration", duration),
-						)
-					}
-					return resp, err
-				})
-			}),
-		),
-	}
-
-	authServicePath, authServiceHandler := authv1connect.NewAuthServiceHandler(m.authHandler, connectOpts...)
-	router.Mount(authServicePath, authServiceHandler)
-
-	// gRPC reflection for development/debugging
-	reflector := grpcreflect.NewStaticReflector(
-		authv1connect.AuthServiceName,
-	)
-	reflectionPath, reflectionHandler := grpcreflect.NewHandlerV1Alpha(reflector)
-	router.Mount(reflectionPath, reflectionHandler)
+	rest.RegisterRoutes(router, m.authCore, m.jwtService)
 }
 
 // RegisterConsoleRoutes registers console admin routes (if console is enabled)
@@ -319,9 +300,9 @@ func (m *AuthModule) GetConfig() *config.Config {
 	return m.config
 }
 
-// GetHandler returns the auth handler (for advanced usage)
-func (m *AuthModule) GetHandler() *handlers.AuthHandler {
-	return m.authHandler
+// GetCore returns the transport-agnostic auth core (for advanced usage).
+func (m *AuthModule) GetCore() *core.AuthCore {
+	return m.authCore
 }
 
 // GetDatabase returns the database instance (for advanced usage)
@@ -377,8 +358,8 @@ func (m *AuthModule) SetRegistrationHook(hook RegistrationHook) {
 		m.hooks = &AuthHooks{}
 	}
 	m.hooks.OnRegistered = hook
-	if m.authHandler != nil {
-		m.authHandler.SetRegistrationHook(hook)
+	if m.authCore != nil {
+		m.authCore.SetRegistrationHook(hook)
 	}
 }
 
@@ -393,7 +374,7 @@ func (m *AuthModule) GetRegistrationHook() RegistrationHook {
 // SetHooks sets all hooks at once
 func (m *AuthModule) SetHooks(hooks *AuthHooks) {
 	m.hooks = hooks
-	if m.authHandler != nil && hooks != nil {
-		m.authHandler.SetRegistrationHook(hooks.OnRegistered)
+	if m.authCore != nil && hooks != nil {
+		m.authCore.SetRegistrationHook(hooks.OnRegistered)
 	}
 }

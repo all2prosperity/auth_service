@@ -18,8 +18,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 )
 
 func main() {
@@ -73,31 +71,24 @@ func main() {
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.RequestID)
+	// Global per-IP rate limiting (Redis-backed; no-op if disabled/unavailable).
+	router.Use(authModule.IPRateLimitMiddleware())
 	router.Use(middleware.Timeout(60 * time.Second))
 
-	// CORS
+	// CORS — origins are read from configuration. Production must not use "*"
+	// (enforced by config.Validate).
+	allowedOrigins := cfg.Security.AllowedOrigins
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = []string{"*"}
+	}
 	router.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"}, // Configure properly for production
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "Connect-Protocol-Version", "Connect-Timeout-Ms"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
-
-	// ConnectRPC preflight/CORS helper for JSON/Connect transport
-	router.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Connect-Protocol-Version, Connect-Timeout-Ms")
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
 
 	// Health check endpoint
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -111,6 +102,11 @@ func main() {
 
 	// Metrics endpoint
 	router.Handle("/metrics", promhttp.Handler())
+
+	// OpenAPI specification (for third-party client generation)
+	router.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "api/openapi.yaml")
+	})
 
 	// Register auth service routes
 	authModule.RegisterRoutes(router)
@@ -127,10 +123,10 @@ func main() {
 		fmt.Fprintf(w, status)
 	})
 
-	// Create HTTP server (h2c enables HTTP/2 cleartext for ConnectRPC)
+	// Create HTTP server (plain HTTP/1.1; REST/JSON needs no h2c).
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:      h2c.NewHandler(router, &http2.Server{}),
+		Handler:      router,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,

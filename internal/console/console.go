@@ -26,6 +26,9 @@ type Console struct {
 type Config struct {
 	JWTSecret string
 	Enabled   bool
+	// TokenRevoker enables the "revoke all sessions" admin action. Optional;
+	// when nil, revocation relies on natural token expiry.
+	TokenRevoker store.TokenRevoker
 }
 
 // NewConsole creates and initializes the console module
@@ -41,7 +44,7 @@ func NewConsole(db *gorm.DB, config Config) (*Console, error) {
 	rbacGuard := rbac.NewGuard()
 
 	// Initialize store (database implementation for integrated mode)
-	consoleStore := store.NewDBStore(db)
+	consoleStore := store.NewDBStore(db, config.TokenRevoker)
 
 	// Initialize service
 	consoleService := service.NewConsoleService(consoleStore, rbacGuard, consoleMetrics)

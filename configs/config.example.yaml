@@ -1,0 +1,62 @@
+# Auth Service configuration example.
+#
+# Copy to one of the auto-loaded paths (configs/local.yaml, configs/auth.yaml,
+# or ./config.yaml) and adjust. Every key can also be set via environment
+# variables, e.g. SECURITY_TEST_BYPASS_CODE -> security.test_bypass_code,
+# JWT_ACCESS_SECRET -> jwt.access_secret.
+
+# development | staging | production
+# In production the service refuses to start with default/short JWT secrets,
+# a wildcard CORS origin, or an enabled test bypass code.
+app_env: development
+
+server:
+  port: 8080
+  host: 0.0.0.0
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: ""
+  db_name: auth_service
+  ssl_mode: disable
+
+jwt:
+  # Production: must be strong, random, and at least 32 characters.
+  access_secret: "change-me-access-secret"
+  refresh_secret: "change-me-refresh-secret"
+  access_token_ttl: 15m
+  refresh_token_ttl: 168h
+  issuer: auth-service
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+security:
+  # Gated test bypass code for non-production verification flows.
+  # MUST be disabled in production (enforced by config validation).
+  test_bypass_code: "159357"
+  enable_test_bypass: true
+
+  # Key used to HMAC verification codes before storage. Defaults to the JWT
+  # access secret when empty.
+  code_hmac_secret: ""
+
+  # Login brute-force protection (per identifier + IP).
+  login_max_attempts: 5
+  login_lock_duration: 15m
+
+  # Max failed attempts before a verification code is invalidated.
+  code_max_attempts: 5
+
+  # CORS whitelist. Production must list explicit origins, never "*".
+  allowed_origins:
+    - "http://localhost:3000"
+
+  # Global per-IP rate limit: max requests per window (0 disables it).
+  ip_rate_limit: 100
+  ip_rate_window: 1m

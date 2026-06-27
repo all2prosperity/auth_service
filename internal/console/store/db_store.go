@@ -12,18 +12,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// TokenRevoker invalidates all of a user's tokens. Implemented by the
+// services.TokenBlacklist; kept as a local interface to avoid a hard dependency.
+type TokenRevoker interface {
+	RevokeUser(ctx context.Context, userID string) (int, error)
+}
+
 // DBStore implements Store interface using direct database access
 // This is used in integrated mode where console runs within auth-server
 type DBStore struct {
 	db          *gorm.DB
 	auditLogger *audit.Logger
+	revoker     TokenRevoker // optional; nil falls back to natural expiry
 }
 
 // NewDBStore creates a new database store
-func NewDBStore(db *gorm.DB) Store {
+func NewDBStore(db *gorm.DB, revoker TokenRevoker) Store {
 	return &DBStore{
 		db:          db,
 		auditLogger: audit.NewLogger(db),
+		revoker:     revoker,
 	}
 }
 
@@ -210,17 +218,35 @@ func (s *DBStore) RevokeUserTokens(ctx context.Context, userID string) (int, err
 		return 0, fmt.Errorf("invalid user ID: %w", err)
 	}
 
-	// Without a server-side blacklist, token revocation relies on expiration.
+	if s.revoker == nil {
+		// No blacklist wired; tokens expire naturally.
+		s.auditLogger.Log(ctx, audit.LogRequest{
+			UserID: userID,
+			Action: "revoke_tokens",
+			Details: map[string]interface{}{
+				"tokens_revoked": 0,
+				"note":           "token blacklist not configured; tokens expire naturally",
+			},
+		})
+		return 0, nil
+	}
+
+	// Bump the user's revocation epoch so every previously issued token is
+	// rejected on its next validation.
+	epoch, err := s.revoker.RevokeUser(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to revoke user tokens: %w", err)
+	}
+
 	s.auditLogger.Log(ctx, audit.LogRequest{
 		UserID: userID,
 		Action: "revoke_tokens",
 		Details: map[string]interface{}{
-			"tokens_revoked": 0,
-			"note":           "no blacklist table; tokens expire naturally",
+			"epoch": epoch,
 		},
 	})
 
-	return 0, nil
+	return epoch, nil
 }
 
 // ListAuditLogs retrieves audit logs

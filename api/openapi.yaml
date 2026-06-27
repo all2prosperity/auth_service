@@ -1,0 +1,294 @@
+openapi: 3.0.3
+info:
+  title: Auth Service API
+  description: |
+    Authentication REST API for first- and third-party app integration.
+    Password & passwordless (email/SMS code) login, registration, JWT access/refresh
+    tokens, and password reset. All request/response bodies are JSON.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: auth
+    description: Authentication and account endpoints
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user with email or phone + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Password login with email or phone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+
+  /auth/token/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate a refresh token into a new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current access token
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: No Content }
+        '401': { $ref: '#/components/responses/Error' }
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Get the authenticated user's profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserInfo' }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /auth/password-reset/start:
+    post:
+      tags: [auth]
+      summary: Send a password-reset code over email or SMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifierRequest' }
+      responses:
+        '204': { description: No Content }
+        '400': { $ref: '#/components/responses/Error' }
+
+  /auth/password-reset/complete:
+    post:
+      tags: [auth]
+      summary: Complete a password reset with the issued token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompletePasswordResetRequest' }
+      responses:
+        '204': { description: No Content }
+        '400': { $ref: '#/components/responses/Error' }
+
+  /auth/code-login/start:
+    post:
+      tags: [auth]
+      summary: Send a passwordless login code over email or SMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentifierRequest' }
+      responses:
+        '204': { description: No Content }
+        '400': { $ref: '#/components/responses/Error' }
+
+  /auth/code-login/complete:
+    post:
+      tags: [auth]
+      summary: Complete passwordless login (creates user on first login)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteCodeLoginRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /auth/code-register/start:
+    post:
+      tags: [auth]
+      summary: Send an SMS registration code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartCodeRegisterRequest' }
+      responses:
+        '204': { description: No Content }
+        '400': { $ref: '#/components/responses/Error' }
+
+  /auth/code-register/complete:
+    post:
+      tags: [auth]
+      summary: Complete SMS registration with code + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompleteCodeRegisterRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [password]
+      properties:
+        email: { type: string, format: email }
+        phone_number: { type: string }
+        password: { type: string }
+      description: Provide exactly one of email or phone_number.
+
+    LoginRequest:
+      type: object
+      required: [password]
+      properties:
+        email: { type: string, format: email }
+        phone_number: { type: string }
+        password: { type: string }
+      description: Provide exactly one of email or phone_number.
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+
+    IdentifierRequest:
+      type: object
+      properties:
+        email: { type: string, format: email }
+        phone_number: { type: string }
+      description: Provide exactly one of email or phone_number.
+
+    CompletePasswordResetRequest:
+      type: object
+      required: [token, new_password]
+      properties:
+        token: { type: string }
+        new_password: { type: string }
+
+    CompleteCodeLoginRequest:
+      type: object
+      required: [code]
+      properties:
+        email: { type: string, format: email }
+        phone_number: { type: string }
+        code: { type: string }
+
+    StartCodeRegisterRequest:
+      type: object
+      required: [phone_number]
+      properties:
+        phone_number: { type: string }
+
+    CompleteCodeRegisterRequest:
+      type: object
+      required: [phone_number, code, password]
+      properties:
+        phone_number: { type: string }
+        code: { type: string }
+        password: { type: string }
+
+    UserInfo:
+      type: object
+      properties:
+        user_id: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+        created: { type: string, format: date-time }
+
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+
+    AuthResult:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/UserInfo' }
+        tokens: { $ref: '#/components/schemas/TokenPair' }
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [invalid_argument, unauthenticated, permission_denied, not_found, already_exists, resource_exhausted, internal]
+            message: { type: string }

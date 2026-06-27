@@ -114,6 +114,9 @@ func (m *MigrationManager) createAdditionalIndexes() error {
 		`CREATE INDEX IF NOT EXISTS idx_audit_logs_user_time ON audit_logs (user_id, created_at DESC);`,
 		`CREATE INDEX IF NOT EXISTS idx_code_login_tokens_identifier_channel ON code_login_tokens (identifier, channel);`,
 		`CREATE INDEX IF NOT EXISTS idx_login_attempts_locked ON login_attempts (locked_until);`,
+		// Codes are now stored as HMAC digests; the old unique index on the
+		// plaintext code column is obsolete.
+		`DROP INDEX IF EXISTS idx_identifier_code_channel;`,
 	}
 
 	for _, query := range indexQueries {

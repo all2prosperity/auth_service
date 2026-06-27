@@ -16,6 +16,7 @@ import (
 
 // Config holds all configuration for the application
 type Config struct {
+	AppEnv   string         `koanf:"app_env"` // development | staging | production
 	Server   ServerConfig   `koanf:"server"`
 	Database DatabaseConfig `koanf:"database"`
 	JWT      JWTConfig      `koanf:"jwt"`
@@ -25,6 +26,7 @@ type Config struct {
 	Redis    RedisConfig    `koanf:"redis"`
 	Logging  LoggingConfig  `koanf:"logging"`
 	Features FeatureConfig  `koanf:"features"`
+	Security SecurityConfig `koanf:"security"`
 }
 
 type ServerConfig struct {
@@ -137,6 +139,34 @@ type FeatureConfig struct {
 	EnableHealthCheck bool `koanf:"enable_health_check"`
 }
 
+// SecurityConfig holds security-related tunables (brute-force protection,
+// verification-code limits, CORS whitelist, and the gated test bypass code).
+type SecurityConfig struct {
+	// TestBypassCode is a verification code that is accepted in non-production
+	// environments only, and only when EnableTestBypass is true.
+	TestBypassCode   string `koanf:"test_bypass_code"`
+	EnableTestBypass bool   `koanf:"enable_test_bypass"`
+
+	// CodeHMACSecret keys the HMAC used to hash verification codes before
+	// storage. Falls back to the JWT access secret when empty.
+	CodeHMACSecret string `koanf:"code_hmac_secret"`
+
+	// Login brute-force protection.
+	LoginMaxAttempts  int           `koanf:"login_max_attempts"`
+	LoginLockDuration time.Duration `koanf:"login_lock_duration"`
+
+	// CodeMaxAttempts caps failed verification-code attempts before the code
+	// is invalidated.
+	CodeMaxAttempts int `koanf:"code_max_attempts"`
+
+	// AllowedOrigins is the CORS whitelist. Production must not use "*".
+	AllowedOrigins []string `koanf:"allowed_origins"`
+
+	// Global per-IP rate limiting.
+	IPRateLimit  int           `koanf:"ip_rate_limit"`
+	IPRateWindow time.Duration `koanf:"ip_rate_window"`
+}
+
 var (
 	k         = koanf.New(".")
 	appConfig *Config
@@ -199,6 +229,9 @@ func LoadConfig(configFiles ...string) (*Config, error) {
 // setDefaults sets default configuration values
 func setDefaults(k *koanf.Koanf) {
 	defaults := map[string]interface{}{
+		// App environment
+		"app_env": "development",
+
 		// Server defaults
 		"server.port":          8080,
 		"server.host":          "localhost",
@@ -274,6 +307,17 @@ func setDefaults(k *koanf.Koanf) {
 		"features.enable_metrics":      true,
 		"features.enable_cors":         true,
 		"features.enable_health_check": true,
+
+		// Security defaults
+		"security.test_bypass_code":    "",
+		"security.enable_test_bypass":  false,
+		"security.code_hmac_secret":    "",
+		"security.login_max_attempts":  5,
+		"security.login_lock_duration": "15m",
+		"security.code_max_attempts":   5,
+		"security.allowed_origins":     []string{"*"},
+		"security.ip_rate_limit":       100,
+		"security.ip_rate_window":      "1m",
 	}
 
 	for key, value := range defaults {
@@ -309,6 +353,27 @@ func (c *Config) GetRedisAddr() string {
 	return fmt.Sprintf("%s:%d", c.Redis.Host, c.Redis.Port)
 }
 
+// IsProduction reports whether the service is running in a production environment.
+func (c *Config) IsProduction() bool {
+	return strings.EqualFold(c.AppEnv, "production") || strings.EqualFold(c.AppEnv, "prod")
+}
+
+// CodeHMACKey returns the key used to HMAC verification codes before storage.
+// Falls back to the JWT access secret when no dedicated secret is configured.
+func (c *Config) CodeHMACKey() string {
+	if c.Security.CodeHMACSecret != "" {
+		return c.Security.CodeHMACSecret
+	}
+	return c.JWT.AccessSecret
+}
+
+// defaultJWTSecrets are the placeholder secrets shipped in setDefaults; they must
+// never be used in production.
+var defaultJWTSecrets = map[string]bool{
+	"change-me-access-secret":  true,
+	"change-me-refresh-secret": true,
+}
+
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.Database.Host == "" {
@@ -332,6 +397,42 @@ func (c *Config) Validate() error {
 	if c.JWT.RefreshSecret == "" {
 		return fmt.Errorf("JWT refresh secret is required")
 	}
+
+	if c.IsProduction() {
+		// Reject weak/default JWT secrets in production.
+		for _, s := range []string{c.JWT.AccessSecret, c.JWT.RefreshSecret} {
+			if defaultJWTSecrets[s] {
+				return fmt.Errorf("default JWT secret detected in production; set a strong jwt.access_secret/jwt.refresh_secret")
+			}
+			if len(s) < 32 {
+				return fmt.Errorf("JWT secret must be at least 32 characters in production")
+			}
+		}
+		// CORS must be locked down in production.
+		if len(c.Security.AllowedOrigins) == 0 {
+			return fmt.Errorf("security.allowed_origins must be set in production")
+		}
+		for _, o := range c.Security.AllowedOrigins {
+			if o == "*" {
+				return fmt.Errorf("security.allowed_origins must not contain \"*\" in production")
+			}
+		}
+		// The test bypass code must never be active in production.
+		if c.Security.EnableTestBypass {
+			return fmt.Errorf("security.enable_test_bypass must be false in production")
+		}
+	} else {
+		// Non-production: warn loudly but do not block local development.
+		for _, s := range []string{c.JWT.AccessSecret, c.JWT.RefreshSecret} {
+			if defaultJWTSecrets[s] || len(s) < 32 {
+				if zap.L() != nil {
+					zap.L().Warn("Weak or default JWT secret in use; do NOT use this configuration in production")
+				}
+				break
+			}
+		}
+	}
+
 	return nil
 }
 

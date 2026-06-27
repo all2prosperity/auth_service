@@ -19,6 +19,16 @@ type BaseModel struct {
 	DeletedAt *time.Time `gorm:"index" json:"deleted_at,omitempty"`
 }
 
+// BeforeCreate assigns a ULID primary key when one is not already set. Models
+// that embed BaseModel without their own BeforeCreate (CodeLoginToken,
+// AuditLog, SocialAccount, PasswordResetToken) rely on this; User overrides it.
+func (b *BaseModel) BeforeCreate(tx *gorm.DB) error {
+	if b.ID == "" {
+		b.ID = ulid.Make().String()
+	}
+	return nil
+}
+
 // StringArray represents a PostgreSQL string array
 type StringArray []string
 
@@ -152,12 +162,14 @@ const (
 	CodeChannelSMS   CodeChannel = "sms"
 )
 
-// CodeLoginToken represents a one-time code for login
+// CodeLoginToken represents a one-time code for login.
+// Code stores an HMAC of the verification code, never the plaintext.
 type CodeLoginToken struct {
 	BaseModel
 	Identifier string      `gorm:"type:text;not null;index" json:"identifier"`
 	Channel    CodeChannel `gorm:"type:code_channel;not null" json:"channel"`
-	Code       string      `gorm:"type:text;not null;uniqueIndex:idx_identifier_code_channel,priority:2" json:"code"`
+	Code       string      `gorm:"type:text;not null" json:"-"`
+	Attempts   int         `gorm:"default:0" json:"attempts"`
 	ExpiresAt  time.Time   `gorm:"not null;index;column:expires_at" json:"expires_at"`
 	Used       bool        `gorm:"default:false" json:"used"`
 }

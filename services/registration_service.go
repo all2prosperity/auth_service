@@ -21,23 +21,40 @@ type RegistrationCodeService struct {
 	codeLength   int
 	codeExpiry   time.Duration
 	sendInterval time.Duration
+
+	// Gated test bypass: a code accepted only outside production when enabled.
+	testBypassCode   string
+	enableTestBypass bool
+	isProd           bool
 }
 
 // NewRegistrationCodeService creates a new RegistrationCodeService
-func NewRegistrationCodeService(redisClient *redis.Client, smsConfig *config.SMSConfig, logger zerolog.Logger) (*RegistrationCodeService, error) {
+func NewRegistrationCodeService(redisClient *redis.Client, smsConfig *config.SMSConfig, securityConfig *config.SecurityConfig, isProd bool, logger zerolog.Logger) (*RegistrationCodeService, error) {
 	smsService, err := NewSMSService(smsConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SMS service: %w", err)
 	}
 
-	return &RegistrationCodeService{
+	svc := &RegistrationCodeService{
 		redisClient:  redisClient,
 		logger:       logger,
 		smsService:   smsService,
 		codeLength:   6,
 		codeExpiry:   10 * time.Minute,
 		sendInterval: 120 * time.Second,
-	}, nil
+		isProd:       isProd,
+	}
+	if securityConfig != nil {
+		svc.testBypassCode = securityConfig.TestBypassCode
+		svc.enableTestBypass = securityConfig.EnableTestBypass
+	}
+	return svc, nil
+}
+
+// testBypassAllowed reports whether the gated test code should be accepted.
+// It is never allowed in production, regardless of configuration.
+func (s *RegistrationCodeService) testBypassAllowed(inputCode string) bool {
+	return !s.isProd && s.enableTestBypass && s.testBypassCode != "" && inputCode == s.testBypassCode
 }
 
 // GenerateCode generates a random numeric verification code
@@ -101,8 +118,9 @@ func (s *RegistrationCodeService) VerifyPhoneRegisterCode(ctx context.Context, p
 		return false, errors.New("phone number and code are required")
 	}
 
-	// for test
-	if inputCode == "159357" {
+	// Gated test bypass (non-production only).
+	if s.testBypassAllowed(inputCode) {
+		s.logger.Warn().Str("phone", phoneNumber).Msg("registration verified via test bypass code")
 		return true, nil
 	}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/all2prosperity/auth_service/models"
 
 	"github.com/oklog/ulid/v2"
+	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -96,7 +97,7 @@ func (dao *UserDAO) UpdateUser(user *models.User) error {
 
 // UpdateUserPassword updates a user's password
 func (dao *UserDAO) UpdateUserPassword(userID ulid.ULID, passwordHash string) error {
-	result := dao.db.Model(&models.User{}).Where("id = ?", userID).Update("password_hash", passwordHash)
+	result := dao.db.Model(&models.User{}).Where("id = ?", userID.String()).Update("password_hash", passwordHash)
 	if result.Error != nil {
 		return fmt.Errorf("failed to update user password: %w", result.Error)
 	}
@@ -108,7 +109,7 @@ func (dao *UserDAO) UpdateUserPassword(userID ulid.ULID, passwordHash string) er
 
 // UpdateUserRoles updates a user's roles
 func (dao *UserDAO) UpdateUserRoles(userID ulid.ULID, roles []string) error {
-	result := dao.db.Model(&models.User{}).Where("id = ?", userID).Update("roles", roles)
+	result := dao.db.Model(&models.User{}).Where("id = ?", userID.String()).Update("roles", datatypes.NewJSONSlice(roles))
 	if result.Error != nil {
 		return fmt.Errorf("failed to update user roles: %w", result.Error)
 	}
@@ -121,7 +122,7 @@ func (dao *UserDAO) UpdateUserRoles(userID ulid.ULID, roles []string) error {
 // ConfirmUser confirms a user's email/phone
 func (dao *UserDAO) ConfirmUser(userID ulid.ULID) error {
 	now := time.Now()
-	result := dao.db.Model(&models.User{}).Where("id = ?", userID).Update("confirmed_at", &now)
+	result := dao.db.Model(&models.User{}).Where("id = ?", userID.String()).Update("confirmed_at", &now)
 	if result.Error != nil {
 		return fmt.Errorf("failed to confirm user: %w", result.Error)
 	}
@@ -133,7 +134,7 @@ func (dao *UserDAO) ConfirmUser(userID ulid.ULID) error {
 
 // LockUser locks a user until the specified time
 func (dao *UserDAO) LockUser(userID ulid.ULID, until time.Time) error {
-	result := dao.db.Model(&models.User{}).Where("id = ?", userID).Update("locked_until", &until)
+	result := dao.db.Model(&models.User{}).Where("id = ?", userID.String()).Update("locked_until", &until)
 	if result.Error != nil {
 		return fmt.Errorf("failed to lock user: %w", result.Error)
 	}
@@ -145,7 +146,7 @@ func (dao *UserDAO) LockUser(userID ulid.ULID, until time.Time) error {
 
 // UnlockUser unlocks a user
 func (dao *UserDAO) UnlockUser(userID ulid.ULID) error {
-	result := dao.db.Model(&models.User{}).Where("id = ?", userID).Update("locked_until", nil)
+	result := dao.db.Model(&models.User{}).Where("id = ?", userID.String()).Update("locked_until", nil)
 	if result.Error != nil {
 		return fmt.Errorf("failed to unlock user: %w", result.Error)
 	}
@@ -157,7 +158,7 @@ func (dao *UserDAO) UnlockUser(userID ulid.ULID) error {
 
 // DeleteUser soft deletes a user
 func (dao *UserDAO) DeleteUser(userID ulid.ULID) error {
-	result := dao.db.Delete(&models.User{}, userID)
+	result := dao.db.Delete(&models.User{}, "id = ?", userID.String())
 	if result.Error != nil {
 		return fmt.Errorf("failed to delete user: %w", result.Error)
 	}
@@ -169,7 +170,7 @@ func (dao *UserDAO) DeleteUser(userID ulid.ULID) error {
 
 // HardDeleteUser permanently deletes a user
 func (dao *UserDAO) HardDeleteUser(userID ulid.ULID) error {
-	result := dao.db.Unscoped().Delete(&models.User{}, userID)
+	result := dao.db.Unscoped().Delete(&models.User{}, "id = ?", userID.String())
 	if result.Error != nil {
 		return fmt.Errorf("failed to hard delete user: %w", result.Error)
 	}
@@ -202,7 +203,7 @@ func (dao *UserDAO) CountUsers() (int64, error) {
 // GetUserWithSocialAccounts retrieves a user with their social accounts
 func (dao *UserDAO) GetUserWithSocialAccounts(userID ulid.ULID) (*models.User, error) {
 	var user models.User
-	result := dao.db.Preload("SocialAccounts").Where("id = ?", userID).First(&user)
+	result := dao.db.Preload("SocialAccounts").Where("id = ?", userID.String()).First(&user)
 	if result.Error != nil {
 		if result.Error == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("user not found")

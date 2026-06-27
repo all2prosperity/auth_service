@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"time"
@@ -42,12 +43,14 @@ Security Considerations:
 type JWTClaims struct {
 	UserID string   `json:"user_id"`
 	Roles  []string `json:"roles"`
+	Epoch  int      `json:"epoch"` // user revocation epoch at issuance
 	jwt.RegisteredClaims
 }
 
 // JWTService handles JWT operations
 type JWTService struct {
-	config *config.JWTConfig
+	config    *config.JWTConfig
+	blacklist *TokenBlacklist // optional; enables server-side revocation
 }
 
 // NewJWTService creates a new JWT service
@@ -57,15 +60,36 @@ func NewJWTService(cfg *config.JWTConfig) *JWTService {
 	}
 }
 
+// SetBlacklist wires an optional token blacklist for revocation checks.
+func (s *JWTService) SetBlacklist(b *TokenBlacklist) {
+	s.blacklist = b
+}
+
+// Blacklist returns the configured token blacklist (may be nil).
+func (s *JWTService) Blacklist() *TokenBlacklist {
+	return s.blacklist
+}
+
+// currentEpoch returns the user's current revocation epoch (0 when no
+// blacklist is configured).
+func (s *JWTService) currentEpoch(userID string) int {
+	if s.blacklist == nil {
+		return 0
+	}
+	return s.blacklist.UserEpoch(context.Background(), userID)
+}
+
 // GenerateTokenPair generates access and refresh tokens for a user
 func (s *JWTService) GenerateTokenPair(user *models.User) (accessToken, refreshToken string, err error) {
 	now := time.Now()
 	jti := generateJTI()
+	epoch := s.currentEpoch(user.ID)
 
 	// Generate access token
 	accessClaims := &JWTClaims{
 		UserID: user.ID,
 		Roles:  user.Roles,
+		Epoch:  epoch,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        jti,
 			Subject:   user.ID,
@@ -86,6 +110,7 @@ func (s *JWTService) GenerateTokenPair(user *models.User) (accessToken, refreshT
 	refreshClaims := &JWTClaims{
 		UserID: user.ID,
 		Roles:  user.Roles,
+		Epoch:  epoch,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        refreshJTI,
 			Subject:   user.ID,
@@ -122,6 +147,10 @@ func (s *JWTService) ValidateAccessToken(tokenString string) (*JWTClaims, error)
 		return nil, fmt.Errorf("invalid token")
 	}
 
+	if s.blacklist != nil && s.blacklist.IsRevoked(context.Background(), claims.ID, claims.UserID, claims.Epoch) {
+		return nil, fmt.Errorf("token has been revoked")
+	}
+
 	return claims, nil
 }
 
@@ -143,10 +172,15 @@ func (s *JWTService) ValidateRefreshToken(tokenString string) (*JWTClaims, error
 		return nil, fmt.Errorf("invalid token")
 	}
 
+	if s.blacklist != nil && s.blacklist.IsRevoked(context.Background(), claims.ID, claims.UserID, claims.Epoch) {
+		return nil, fmt.Errorf("token has been revoked")
+	}
+
 	return claims, nil
 }
 
-// RefreshTokenPair generates a new token pair using a refresh token
+// RefreshTokenPair generates a new token pair using a refresh token. The old
+// refresh token is revoked so it cannot be reused (rotation + reuse detection).
 func (s *JWTService) RefreshTokenPair(refreshToken string, user *models.User) (string, string, error) {
 	// Validate refresh token
 	claims, err := s.ValidateRefreshToken(refreshToken)
@@ -157,6 +191,14 @@ func (s *JWTService) RefreshTokenPair(refreshToken string, user *models.User) (s
 	// Verify the token belongs to the user
 	if claims.UserID != user.ID {
 		return "", "", fmt.Errorf("token does not belong to user")
+	}
+
+	// Revoke the presented refresh token so a replay is rejected on next use.
+	if s.blacklist != nil && claims.ExpiresAt != nil {
+		ttl := time.Until(claims.ExpiresAt.Time)
+		if err := s.blacklist.Revoke(context.Background(), claims.ID, ttl); err != nil {
+			return "", "", fmt.Errorf("failed to rotate refresh token: %w", err)
+		}
 	}
 
 	// Generate new token pair

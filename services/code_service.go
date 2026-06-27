@@ -2,7 +2,11 @@ package services
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net/smtp"
@@ -26,16 +30,24 @@ type CodeService struct {
 	codeLength   int
 	codeExpiry   time.Duration
 	sendInterval time.Duration
+
+	hmacKey     []byte
+	maxAttempts int
+
+	// Gated test bypass: accepted only outside production when enabled.
+	testBypassCode   string
+	enableTestBypass bool
+	isProd           bool
 }
 
 // NewCodeService creates a new code service
-func NewCodeService(db *database.DB, smtpConfig *config.SMTPConfig, smsConfig *config.SMSConfig, logger zerolog.Logger) (*CodeService, error) {
+func NewCodeService(db *database.DB, smtpConfig *config.SMTPConfig, smsConfig *config.SMSConfig, securityConfig *config.SecurityConfig, hmacKey string, isProd bool, logger zerolog.Logger) (*CodeService, error) {
 	smsService, err := NewSMSService(smsConfig, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SMS service: %w", err)
 	}
 
-	return &CodeService{
+	svc := &CodeService{
 		db:           db,
 		smtpConfig:   smtpConfig,
 		smsConfig:    smsConfig,
@@ -44,7 +56,31 @@ func NewCodeService(db *database.DB, smtpConfig *config.SMTPConfig, smsConfig *c
 		codeLength:   6,
 		codeExpiry:   10 * time.Minute,
 		sendInterval: 60 * time.Second,
-	}, nil
+		hmacKey:      []byte(hmacKey),
+		maxAttempts:  5,
+		isProd:       isProd,
+	}
+	if securityConfig != nil {
+		svc.testBypassCode = securityConfig.TestBypassCode
+		svc.enableTestBypass = securityConfig.EnableTestBypass
+		if securityConfig.CodeMaxAttempts > 0 {
+			svc.maxAttempts = securityConfig.CodeMaxAttempts
+		}
+	}
+	return svc, nil
+}
+
+// hashCode returns the hex-encoded HMAC-SHA256 of a verification code.
+func (s *CodeService) hashCode(code string) string {
+	mac := hmac.New(sha256.New, s.hmacKey)
+	mac.Write([]byte(code))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// testBypassAllowed reports whether the gated test code should be accepted.
+// Never allowed in production, regardless of configuration.
+func (s *CodeService) testBypassAllowed(inputCode string) bool {
+	return !s.isProd && s.enableTestBypass && s.testBypassCode != "" && inputCode == s.testBypassCode
 }
 
 // GenerateCode generates a random numeric code
@@ -134,6 +170,12 @@ func (s *CodeService) SendSMSCode(ctx context.Context, phoneNumber string, purpo
 
 // VerifyCode verifies a code for an identifier
 func (s *CodeService) VerifyCode(identifier string, channel models.CodeChannel, inputCode string) (bool, error) {
+	// Gated test bypass (non-production only).
+	if s.testBypassAllowed(inputCode) {
+		s.logger.Warn().Str("identifier", identifier).Msg("code verified via test bypass code")
+		return true, nil
+	}
+
 	var token models.CodeLoginToken
 	res := s.db.Where("identifier = ? AND channel = ? AND used = false", identifier, channel).Order("created_at DESC").Limit(1).First(&token)
 	if res.Error != nil {
@@ -148,8 +190,21 @@ func (s *CodeService) VerifyCode(identifier string, channel models.CodeChannel, 
 		return false, nil
 	}
 
-	// Check if code matches
-	if token.Code != inputCode {
+	// Too many failed attempts: invalidate the code to prevent brute-forcing.
+	if token.Attempts >= s.maxAttempts {
+		if err := s.markCodeAsUsed(token.ID); err != nil {
+			return false, fmt.Errorf("failed to invalidate code: %w", err)
+		}
+		s.logger.Warn().Str("identifier", identifier).Msg("verification code invalidated after too many attempts")
+		return false, nil
+	}
+
+	// Constant-time compare of HMAC digests.
+	if subtle.ConstantTimeCompare([]byte(token.Code), []byte(s.hashCode(inputCode))) != 1 {
+		if err := s.db.Model(&models.CodeLoginToken{}).Where("id = ?", token.ID).
+			UpdateColumn("attempts", gorm.Expr("attempts + 1")).Error; err != nil {
+			s.logger.Error().Err(err).Str("identifier", identifier).Msg("failed to increment code attempts")
+		}
 		return false, nil
 	}
 
@@ -187,7 +242,7 @@ func (s *CodeService) storeCode(identifier string, channel models.CodeChannel, c
 	res := s.db.Create(&models.CodeLoginToken{
 		Identifier: identifier,
 		Channel:    channel,
-		Code:       code,
+		Code:       s.hashCode(code),
 		ExpiresAt:  expiresAt,
 	})
 	if res.Error != nil {

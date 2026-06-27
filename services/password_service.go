@@ -138,17 +138,27 @@ func (ps *PasswordService) IsStrongPassword(password string) error {
 		return errors.New("password must be no more than 32 characters long")
 	}
 
-	// Check for at least one uppercase letter
-	hasUpper := false
+	// Require a mix of character classes.
+	var hasUpper, hasLower, hasDigit bool
 	for _, char := range password {
-		if 'A' <= char && char <= 'Z' {
+		switch {
+		case 'A' <= char && char <= 'Z':
 			hasUpper = true
-			break
+		case 'a' <= char && char <= 'z':
+			hasLower = true
+		case '0' <= char && char <= '9':
+			hasDigit = true
 		}
 	}
 
 	if !hasUpper {
 		return errors.New("password must contain at least one uppercase letter")
+	}
+	if !hasLower {
+		return errors.New("password must contain at least one lowercase letter")
+	}
+	if !hasDigit {
+		return errors.New("password must contain at least one digit")
 	}
 
 	return nil
