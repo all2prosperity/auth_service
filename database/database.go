@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/all2prosperity/auth_service/config"
@@ -51,10 +52,21 @@ func NewDatabaseFromGORM(gormDB *gorm.DB) *DB {
 
 // NewDatabase creates a new GORM database connection
 func NewDatabase(cfg *config.DatabaseConfig, zapLogger *zap.SugaredLogger) (*DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.DBName, cfg.SSLMode,
-	)
+	// Build the DSN from non-empty fields only. An empty `password=` token in a
+	// libpq keyword DSN is mis-parsed and silently drops the following keyword
+	// (`dbname`), so a passwordless local role would connect to the wrong
+	// database. Omitting empty fields avoids that footgun.
+	parts := []string{
+		fmt.Sprintf("host=%s", cfg.Host),
+		fmt.Sprintf("port=%d", cfg.Port),
+		fmt.Sprintf("user=%s", cfg.User),
+		fmt.Sprintf("dbname=%s", cfg.DBName),
+		fmt.Sprintf("sslmode=%s", cfg.SSLMode),
+	}
+	if cfg.Password != "" {
+		parts = append(parts, fmt.Sprintf("password=%s", cfg.Password))
+	}
+	dsn := strings.Join(parts, " ")
 
 	gormConfig := &gorm.Config{
 		Logger: logger.New(
