@@ -265,3 +265,6 @@ test/
 
 configs/
 migrate
+# Compiled example/debug binaries
+examples/example_integration
+__debug_bin*
